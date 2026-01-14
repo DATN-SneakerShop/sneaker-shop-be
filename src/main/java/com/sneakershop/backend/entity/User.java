@@ -5,6 +5,7 @@ import javax.persistence.*;
 import java.time.LocalDateTime;
 import java.util.HashSet;
 import java.util.Set;
+import com.fasterxml.jackson.annotation.JsonIgnore;
 
 @Entity
 @Table(name = "nguoi_dung")
@@ -45,4 +46,8 @@ public class User {
 
     @Column(name = "tao_luc")
     private LocalDateTime createdAt = LocalDateTime.now();
+
+    @OneToMany(mappedBy = "performedBy", cascade = CascadeType.PERSIST)
+    @JsonIgnore
+    private Set<AuditLog> auditLogs = new HashSet<>();
 }

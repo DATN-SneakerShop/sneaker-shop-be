@@ -1,6 +1,7 @@
 package com.sneakershop.backend.repository;
 
 import com.sneakershop.backend.entity.AuditLog;
+import com.sneakershop.backend.entity.User;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.stereotype.Repository;
 import java.util.List;
@@ -13,4 +14,6 @@ public interface AuditLogRepository extends JpaRepository<AuditLog, Long> {
     List<AuditLog> findByPerformedByIdOrderByCreatedAtDesc(Long userId);
 
     List<AuditLog> findAllByOrderByCreatedAtDesc();
+
+    List<AuditLog> findByPerformedBy(User user);
 }

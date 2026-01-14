@@ -3,6 +3,8 @@ package com.sneakershop.backend.config;
 import lombok.RequiredArgsConstructor;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
+import org.springframework.http.HttpMethod;
+import org.springframework.security.config.annotation.method.configuration.EnableGlobalMethodSecurity;
 import org.springframework.security.config.annotation.web.builders.HttpSecurity;
 import org.springframework.security.config.annotation.web.configuration.EnableWebSecurity;
 import org.springframework.security.config.http.SessionCreationPolicy;
@@ -16,6 +18,8 @@ import java.util.Arrays;
 @Configuration
 @EnableWebSecurity
 @RequiredArgsConstructor
+// Bật tính năng phân quyền bằng Annotation @PreAuthorize
+@EnableGlobalMethodSecurity(prePostEnabled = true)
 public class SecurityConfig {
 
     private final JwtAuthenticationFilter jwtAuthenticationFilter;
@@ -36,16 +40,23 @@ public class SecurityConfig {
             config.setAllowCredentials(true);
             return config;
         })
-                .and()
-                .csrf().disable()
-                // Quản lý phiên (Session) là Stateless vì mình dùng JWT
+                .and().csrf().disable()
                 .sessionManagement().sessionCreationPolicy(SessionCreationPolicy.STATELESS)
                 .and()
                 .authorizeRequests()
-                .antMatchers("/api/auth/**").permitAll() // Cho phép Login tự do
-                .anyRequest().authenticated(); // Mọi request khác đều phải quét vé (JWT)
+                .antMatchers("/api/auth/**").permitAll()
 
-        // THÊM DÒNG NÀY: Đưa máy quét vé vào trước khi kiểm tra quyền
+                // PHÂN QUYỀN API USERS:
+                // 1. Chỉ ADMIN mới được Thêm, Sửa, Xóa
+                .antMatchers(HttpMethod.POST, "/api/management/users/**").hasAuthority("ADMIN")
+                .antMatchers(HttpMethod.PUT, "/api/management/users/**").hasAuthority("ADMIN")
+                .antMatchers(HttpMethod.DELETE, "/api/management/users/**").hasAuthority("ADMIN")
+
+                // 2. Các quyền khác (như SALES) chỉ được Xem (GET)
+                .antMatchers(HttpMethod.GET, "/api/management/users/**").authenticated()
+
+                .anyRequest().authenticated();
+
         http.addFilterBefore(jwtAuthenticationFilter, UsernamePasswordAuthenticationFilter.class);
 
         return http.build();

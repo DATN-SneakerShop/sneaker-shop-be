@@ -24,19 +24,17 @@ public class UserService {
     private final RoleRepository roleRepository;
     private final AuditLogRepository auditRepository;
     private final PasswordEncoder passwordEncoder;
-    private final AuditLogRepository auditLogRepository;
 
-    public List<AuditLog> getAllAuditLogs() {
-        return auditLogRepository.findAllByOrderByCreatedAtDesc();
+    // Lấy tất cả user hiện có trong DB
+    public List<User> getAllUsers() {
+        return userRepository.findAll();
     }
 
     @Transactional
     public void createUser(UserRequest request, String ip, User admin) {
-        // Check trùng username
         if (userRepository.existsByUsername(request.getUsername())) {
             throw new IllegalArgumentException("Tên đăng nhập đã tồn tại!");
         }
-        // Check trùng email
         if (userRepository.existsByEmail(request.getEmail())) {
             throw new IllegalArgumentException("Email đã được sử dụng!");
         }
@@ -48,11 +46,13 @@ public class UserService {
         user.setFullName(request.getFullName());
         user.setStatus("ACTIVE");
 
-        Set<Role> roles = request.getRoleCodes().stream()
-                .map(code -> roleRepository.findByCode(code)
-                        .orElseThrow(() -> new IllegalArgumentException("Không tìm thấy quyền " + code)))
-                .collect(Collectors.toSet());
-        user.setRoles(roles);
+        if (request.getRoleCodes() != null) {
+            Set<Role> roles = request.getRoleCodes().stream()
+                    .map(code -> roleRepository.findByCode(code)
+                            .orElseThrow(() -> new IllegalArgumentException("Không tìm thấy quyền " + code)))
+                    .collect(Collectors.toSet());
+            user.setRoles(roles);
+        }
 
         User savedUser = userRepository.save(user);
         saveAuditLog("CREATE", savedUser.getId(), "Tạo tài khoản: " + savedUser.getUsername(), ip, admin);
@@ -63,9 +63,9 @@ public class UserService {
         User user = userRepository.findById(id)
                 .orElseThrow(() -> new IllegalArgumentException("Không tìm thấy người dùng"));
 
-        // VALIDATE: Check trùng email (trừ email hiện tại của chính nó)
-        if (!user.getEmail().equals(request.getEmail()) && userRepository.existsByEmail(request.getEmail())) {
-            throw new IllegalArgumentException("Email mới đã được sử dụng bởi người khác!");
+        // Kiểm tra trùng email nếu đổi email
+        if (!user.getEmail().equalsIgnoreCase(request.getEmail()) && userRepository.existsByEmail(request.getEmail())) {
+            throw new IllegalArgumentException("Email mới đã được sử dụng!");
         }
 
         user.setFullName(request.getFullName());
@@ -75,6 +75,15 @@ public class UserService {
             user.setPasswordHash(passwordEncoder.encode(request.getPassword()));
         }
 
+        // Cập nhật Roles nếu cần
+        if (request.getRoleCodes() != null) {
+            Set<Role> roles = request.getRoleCodes().stream()
+                    .map(code -> roleRepository.findByCode(code)
+                            .orElseThrow(() -> new IllegalArgumentException("Không tìm thấy quyền " + code)))
+                    .collect(Collectors.toSet());
+            user.setRoles(roles);
+        }
+
         userRepository.save(user);
         saveAuditLog("UPDATE", id, "Cập nhật user: " + user.getUsername(), ip, admin);
     }
@@ -82,12 +91,22 @@ public class UserService {
     @Transactional
     public void deleteUser(Long userId, String ip, User admin) {
         User user = userRepository.findById(userId)
-                .orElseThrow(() -> new IllegalArgumentException("Không tìm thấy người dùng để xóa"));
-        userRepository.deleteById(userId);
-        saveAuditLog("DELETE", userId, "Xóa người dùng: " + user.getUsername(), ip, admin);
+                .orElseThrow(() -> new IllegalArgumentException("Không tìm thấy người dùng"));
+
+        // 1. Xử lý khóa ngoại trong AuditLog: Tìm các log mà user này đã thực hiện và set null
+        List<AuditLog> logs = auditRepository.findByPerformedBy(user);
+        for (AuditLog log : logs) {
+            log.setPerformedBy(null);
+        }
+        auditRepository.saveAll(logs);
+
+        // 2. Xóa sạch User khỏi DB
+        userRepository.delete(user);
+
+        // 3. Ghi log hành động xóa (admin thực hiện)
+        saveAuditLog("HARD_DELETE", userId, "Đã xóa vĩnh viễn tài khoản: " + user.getUsername(), ip, admin);
     }
 
-    // Hàm dùng chung để ghi log cho sạch code
     private void saveAuditLog(String action, Long entityId, String summary, String ip, User performedBy) {
         AuditLog log = new AuditLog();
         log.setModule("USER_MANAGEMENT");
@@ -100,8 +119,8 @@ public class UserService {
         auditRepository.save(log);
     }
 
-    public List<User> getAllUsers() {
-        return userRepository.findAll();
+    public List<AuditLog> getAllAuditLogs() {
+        return auditRepository.findAllByOrderByCreatedAtDesc();
     }
 
     public User findByUsername(String username) {

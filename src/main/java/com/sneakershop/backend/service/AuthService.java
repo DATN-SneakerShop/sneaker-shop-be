@@ -57,50 +57,59 @@ public class AuthService {
 
     @Transactional
     public User processGoogleAuth(String googleId, String email, String name, String ip) {
-        // 1. Kiểm tra xem email này đã có trong hệ thống chưa
-        Optional<User> existingUser = userRepository.findByEmail(email);
+        // 1. Tìm xem email này đã tồn tại trong hệ thống chưa
+        User user = userRepository.findByEmail(email).orElse(null);
 
-        if (existingUser.isPresent()) {
-            User user = existingUser.get();
-            // Nếu user đã tồn tại nhưng chưa có googleId (đăng ký local trước đó), thì cập nhật ID Google vào
-            if (user.getGoogleId() == null) {
-                user.setGoogleId(googleId);
-                user.setLoaiDangNhap("GOOGLE");
-                userRepository.save(user);
+        if (user != null) {
+            // TRƯỜNG HỢP 1: Tài khoản đã tồn tại
+
+            // CẬP NHẬT QUAN TRỌNG: Nếu tài khoản đang ở trạng thái DELETED, hãy khôi phục lại
+            if ("DELETED".equals(user.getStatus())) {
+                user.setStatus("ACTIVE");
             }
-            return user;
+
+            // Cập nhật thông tin GoogleId nếu trước đó chưa có (trường hợp user local chuyển sang login google)
+            user.setGoogleId(googleId);
+            user.setFullName(name); // Cập nhật lại tên từ Google cho mới nhất
+        } else {
+            // TRƯỜNG HỢP 2: Tài khoản mới hoàn toàn
+            user = new User();
+            // Lấy phần trước chữ @ của email làm username mặc định
+            String defaultUsername = email.split("@")[0];
+
+            // Đảm bảo username không bị trùng nếu đã có người dùng khác trùng tên
+            if (userRepository.existsByUsername(defaultUsername)) {
+                user.setUsername(email); // Nếu trùng thì dùng cả email làm username
+            } else {
+                user.setUsername(defaultUsername);
+            }
+
+            user.setEmail(email);
+            user.setFullName(name);
+            user.setGoogleId(googleId);
+            user.setStatus("ACTIVE");
+            user.setLoaiDangNhap("GOOGLE");
+
+            // Mật khẩu cho user Google nên để một giá trị ngẫu nhiên hoặc mặc định vì họ đăng nhập qua Google
+            user.setPasswordHash(passwordEncoder.encode("GOOGLE_AUTH_SECURE_" + googleId));
+
+            // Gán Role mặc định (Ví dụ: SALES hoặc CUSTOMER)
+            Role defaultRole = roleRepository.findByCode("SALES")
+                    .orElseThrow(() -> new IllegalArgumentException("Không tìm thấy quyền mặc định"));
+            user.getRoles().add(defaultRole);
         }
 
-        // 2. Nếu chưa có email này trong DB -> Tạo mới hoàn toàn
-        User newUser = new User();
+        // Lưu lại (Update hoặc Insert)
+        User savedUser = userRepository.save(user);
 
-        // Tạo username duy nhất từ email (VD: ndhieu1610 từ ndhieu1610@gmail.com)
-        String baseUsername = email.split("@")[0];
-        if (userRepository.existsByUsername(baseUsername)) {
-            baseUsername = baseUsername + "_" + googleId.substring(0, 4);
-        }
+        // Ghi log đăng nhập
+        saveAuditLog("GOOGLE_LOGIN", savedUser.getId(), "Đăng nhập bằng Google: " + email, ip, savedUser);
 
-        newUser.setUsername(baseUsername);
-        newUser.setEmail(email);
-        newUser.setFullName(name);
-        newUser.setGoogleId(googleId);
-        newUser.setLoaiDangNhap("GOOGLE");
-
-        // QUAN TRỌNG: passwordHash nullable = false nên phải set giá trị ngẫu nhiên
-        newUser.setPasswordHash(passwordEncoder.encode(UUID.randomUUID().toString()));
-        newUser.setStatus("ACTIVE");
-
-        // Gán Role mặc định là SALES (giống đăng ký thường)
-        Role defaultRole = roleRepository.findByCode("SALES")
-                .orElseThrow(() -> new RuntimeException("Vai trò SALES chưa tồn tại"));
-        newUser.setRoles(Set.of(defaultRole));
-
-        User saved = userRepository.save(newUser);
-        saveAuditLog("REGISTER_GOOGLE", saved.getId(), "Đăng ký qua Google", ip, saved);
-        return saved;
+        return savedUser;
     }
 
-    private void saveAuditLog(String action, Long entityId, String summary, String ip, User user) {
+    // Hàm ghi log phụ trợ (nếu chưa có trong AuthService)
+    private void saveAuditLog(String action, Long entityId, String summary, String ip, User performedBy) {
         AuditLog log = new AuditLog();
         log.setModule("AUTH");
         log.setAction(action);
@@ -108,7 +117,7 @@ public class AuthService {
         log.setEntityId(entityId);
         log.setSummary(summary);
         log.setIpAddress(ip);
-        log.setPerformedBy(user);
+        log.setPerformedBy(performedBy);
         auditRepository.save(log);
     }
 }

@@ -8,7 +8,6 @@ import java.util.List;
 public class UserRequest {
     @NotBlank(message = "Tên đăng nhập không được để trống")
     @Size(min = 5, max = 20, message = "Tên đăng nhập phải từ 5-20 ký tự")
-    @Pattern(regexp = "^[a-zA-Z0-9]+$", message = "Tên đăng nhập không được chứa ký tự đặc biệt")
     private String username;
 
     @NotBlank(message = "Email không được để trống")
@@ -18,9 +17,9 @@ public class UserRequest {
     @NotBlank(message = "Họ tên không được để trống")
     private String fullName;
 
-    @NotBlank(message = "Mật khẩu không được để trống")
-    @Size(min = 6, message = "Mật khẩu phải từ 6 ký tự trở lên")
+    // Không dùng @NotBlank ở đây để khi Update không bắt buộc nhập mật khẩu mới
     private String password;
 
+    // Trường này cực kỳ quan trọng để fix lỗi build
     private List<String> roleCodes;
 }

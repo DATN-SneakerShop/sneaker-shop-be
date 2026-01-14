@@ -32,7 +32,7 @@ public class AuthController {
 
     @PostMapping("/login")
     public ResponseEntity<?> login(@Valid @RequestBody LoginRequest request) {
-        
+
         User user = userService.findByUsername(request.getUsername());
 
         if (user == null) {
@@ -81,7 +81,7 @@ public class AuthController {
     }
 
     private ResponseEntity<?> generateAuthResponse(User user) {
-        String token = tokenProvider.generateToken(user.getUsername());
+        String token = tokenProvider.generateToken(user);
 
         String roleCode = "SALES";
         Set<Role> roles = user.getRoles();
