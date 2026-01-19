@@ -1,12 +1,12 @@
 package com.sneakershop.backend.controller;
 
 import com.sneakershop.backend.dto.UserRequest;
-import com.sneakershop.backend.entity.AuditLog;
 import com.sneakershop.backend.entity.User;
 import com.sneakershop.backend.service.UserService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
+import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.web.bind.annotation.*;
 import javax.servlet.http.HttpServletRequest;
 import java.util.List;
@@ -25,10 +25,14 @@ public class UserManagementController {
     }
 
     @PostMapping
-    @PreAuthorize("hasAuthority('ADMIN')") // Chặn tại đầu hàm
+    @PreAuthorize("hasAuthority('ADMIN')")
     public ResponseEntity<?> createUser(@RequestBody UserRequest request, HttpServletRequest servletRequest) {
         try {
-            userService.createUser(request, servletRequest.getRemoteAddr(), null);
+            // FIX: Lấy thông tin admin đang thực hiện thao tác
+            String username = SecurityContextHolder.getContext().getAuthentication().getName();
+            User admin = userService.findByUsername(username);
+
+            userService.createUser(request, servletRequest.getRemoteAddr(), admin);
             return ResponseEntity.ok("Thêm người dùng thành công");
         } catch (IllegalArgumentException e) {
             return ResponseEntity.badRequest().body(e.getMessage());
@@ -36,10 +40,13 @@ public class UserManagementController {
     }
 
     @PutMapping("/{id}")
-    @PreAuthorize("hasAuthority('ADMIN')") // Chặn tại đầu hàm
+    @PreAuthorize("hasAuthority('ADMIN')")
     public ResponseEntity<?> updateUser(@PathVariable Long id, @RequestBody UserRequest request, HttpServletRequest servletRequest) {
         try {
-            userService.updateUser(id, request, servletRequest.getRemoteAddr(), null);
+            String username = SecurityContextHolder.getContext().getAuthentication().getName();
+            User admin = userService.findByUsername(username);
+
+            userService.updateUser(id, request, servletRequest.getRemoteAddr(), admin);
             return ResponseEntity.ok("Cập nhật thành công");
         } catch (IllegalArgumentException e) {
             return ResponseEntity.badRequest().body(e.getMessage());
@@ -47,19 +54,16 @@ public class UserManagementController {
     }
 
     @DeleteMapping("/{id}")
-    @PreAuthorize("hasAuthority('ADMIN')") // Chặn tại đầu hàm
+    @PreAuthorize("hasAuthority('ADMIN')")
     public ResponseEntity<?> deleteUser(@PathVariable Long id, HttpServletRequest servletRequest) {
         try {
-            userService.deleteUser(id, servletRequest.getRemoteAddr(), null);
+            String username = SecurityContextHolder.getContext().getAuthentication().getName();
+            User admin = userService.findByUsername(username);
+
+            userService.deleteUser(id, servletRequest.getRemoteAddr(), admin);
             return ResponseEntity.ok("Xóa người dùng thành công");
         } catch (IllegalArgumentException e) {
             return ResponseEntity.badRequest().body(e.getMessage());
         }
-    }
-
-    @GetMapping("/logs")
-    @PreAuthorize("hasAuthority('ADMIN')") // Chỉ Admin mới được xem nhật ký hệ thống
-    public ResponseEntity<List<AuditLog>> getAuditLogs() {
-        return ResponseEntity.ok(userService.getAllAuditLogs());
     }
 }

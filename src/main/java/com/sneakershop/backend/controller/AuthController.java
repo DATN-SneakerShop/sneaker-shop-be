@@ -1,7 +1,7 @@
 package com.sneakershop.backend.controller;
 
 import com.sneakershop.backend.config.JwtTokenProvider;
-import com.sneakershop.backend.dto.LoginRequest; // Thêm DTO mới
+import com.sneakershop.backend.dto.LoginRequest;
 import com.sneakershop.backend.dto.UserRequest;
 import com.sneakershop.backend.entity.Role;
 import com.sneakershop.backend.entity.User;
@@ -10,14 +10,16 @@ import com.sneakershop.backend.service.UserService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
+import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.web.bind.annotation.*;
 
 import javax.servlet.http.HttpServletRequest;
-import javax.validation.Valid; // Để validate @NotBlank, @Size
+import javax.validation.Valid;
 import java.util.HashMap;
+import java.util.List;
 import java.util.Map;
-import java.util.Set;
+import java.util.stream.Collectors;
 
 @RestController
 @RequestMapping("/api/auth")
@@ -31,24 +33,26 @@ public class AuthController {
     private final AuthService authService;
 
     @PostMapping("/login")
-    public ResponseEntity<?> login(@Valid @RequestBody LoginRequest request) {
-
+    public ResponseEntity<?> login(@RequestBody LoginRequest request) {
         User user = userService.findByUsername(request.getUsername());
+        if (user == null || !passwordEncoder.matches(request.getPassword(), user.getPasswordHash())) {
+            return ResponseEntity.status(401).body("Sai tài khoản hoặc mật khẩu!");
+        }
+        return generateAuthResponse(user); // Dùng chung hàm để chuẩn hóa dữ liệu trả về
+    }
 
-        if (user == null) {
-            return ResponseEntity.status(HttpStatus.UNAUTHORIZED)
-                    .body("Tài khoản hoặc mật khẩu không chính xác!");
-        }
-        if (!"ACTIVE".equals(user.getStatus())) {
-            return ResponseEntity.status(HttpStatus.FORBIDDEN)
-                    .body("Tài khoản đã bị khóa. Vui lòng liên hệ Admin!");
-        }
-        if (passwordEncoder.matches(request.getPassword(), user.getPasswordHash())) {
-            return generateAuthResponse(user);
-        }
+    @GetMapping("/me")
+    public ResponseEntity<?> getCurrentUser() {
+        String username = SecurityContextHolder.getContext().getAuthentication().getName();
+        User user = userService.findByUsername(username);
+        if (user == null) return ResponseEntity.status(404).body("User not found");
 
-        return ResponseEntity.status(HttpStatus.UNAUTHORIZED)
-                .body("Tài khoản hoặc mật khẩu không chính xác!");
+        Map<String, Object> data = new HashMap<>();
+        data.put("username", user.getUsername());
+        data.put("fullName", user.getFullName());
+        data.put("email", user.getEmail());
+        data.put("roles", user.getRoles().stream().map(Role::getCode).collect(Collectors.toList()));
+        return ResponseEntity.ok(data);
     }
 
     @PostMapping("/google-login")
@@ -80,19 +84,18 @@ public class AuthController {
         }
     }
 
+    // FIX: Chuẩn hóa trả về roles cho cả Login nội bộ và Google
     private ResponseEntity<?> generateAuthResponse(User user) {
         String token = tokenProvider.generateToken(user);
-
-        String roleCode = "SALES";
-        Set<Role> roles = user.getRoles();
-        if (roles != null && !roles.isEmpty()) {
-            roleCode = roles.iterator().next().getCode();
-        }
+        List<String> roles = user.getRoles().stream()
+                .map(Role::getCode)
+                .collect(Collectors.toList());
 
         Map<String, Object> responseData = new HashMap<>();
         responseData.put("accessToken", token);
         responseData.put("username", user.getUsername());
-        responseData.put("role", roleCode);
+        responseData.put("fullName", user.getFullName());
+        responseData.put("roles", roles); // Luôn trả về mảng
 
         return ResponseEntity.ok(responseData);
     }

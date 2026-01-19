@@ -11,11 +11,8 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
-import org.springframework.util.StringUtils;
 
-import java.util.Optional;
 import java.util.Set;
-import java.util.UUID;
 
 @Service
 @RequiredArgsConstructor
@@ -27,17 +24,13 @@ public class AuthService {
 
     @Transactional
     public void registerLocal(UserRequest request, String ip) {
-        // 1. Kiểm tra username đã tồn tại chưa
         if (userRepository.existsByUsername(request.getUsername())) {
-            throw new IllegalArgumentException("Tên đăng nhập '" + request.getUsername() + "' đã tồn tại!");
+            throw new IllegalArgumentException("Tên đăng nhập đã tồn tại!");
         }
-
-        // 2. Kiểm tra email đã tồn tại chưa
         if (userRepository.existsByEmail(request.getEmail())) {
-            throw new IllegalArgumentException("Email '" + request.getEmail() + "' đã được sử dụng bởi tài khoản khác!");
+            throw new IllegalArgumentException("Email đã được sử dụng!");
         }
 
-        // 3. Tạo mới User
         User user = new User();
         user.setUsername(request.getUsername());
         user.setEmail(request.getEmail());
@@ -46,69 +39,47 @@ public class AuthService {
         user.setLoaiDangNhap("LOCAL");
         user.setStatus("ACTIVE");
 
-        // 4. Gán Role mặc định
-        Role defaultRole = roleRepository.findByCode("SALES")
-                .orElseThrow(() -> new RuntimeException("Lỗi: Vai trò SALES chưa được cấu hình trong hệ thống!"));
-        user.setRoles(Set.of(defaultRole));
+        // FIX: Luôn gán quyền CUSTOMER khi đăng ký mới
+        Role customerRole = roleRepository.findByCode("CUSTOMER")
+                .orElseThrow(() -> new RuntimeException("Lỗi: Role CUSTOMER chưa có trong DB!"));
+        user.setRoles(Set.of(customerRole));
 
         User savedUser = userRepository.save(user);
-        saveAuditLog("REGISTER", savedUser.getId(), "Đăng ký tài khoản hệ thống", ip, savedUser);
+        saveAuditLog("REGISTER", savedUser.getId(), "Đăng ký tài khoản mới", ip, savedUser);
     }
 
     @Transactional
     public User processGoogleAuth(String googleId, String email, String name, String ip) {
-        // 1. Tìm xem email này đã tồn tại trong hệ thống chưa
         User user = userRepository.findByEmail(email).orElse(null);
 
         if (user != null) {
-            // TRƯỜNG HỢP 1: Tài khoản đã tồn tại
-
-            // CẬP NHẬT QUAN TRỌNG: Nếu tài khoản đang ở trạng thái DELETED, hãy khôi phục lại
             if ("DELETED".equals(user.getStatus())) {
                 user.setStatus("ACTIVE");
             }
-
-            // Cập nhật thông tin GoogleId nếu trước đó chưa có (trường hợp user local chuyển sang login google)
             user.setGoogleId(googleId);
-            user.setFullName(name); // Cập nhật lại tên từ Google cho mới nhất
+            user.setFullName(name);
         } else {
-            // TRƯỜNG HỢP 2: Tài khoản mới hoàn toàn
             user = new User();
-            // Lấy phần trước chữ @ của email làm username mặc định
             String defaultUsername = email.split("@")[0];
-
-            // Đảm bảo username không bị trùng nếu đã có người dùng khác trùng tên
-            if (userRepository.existsByUsername(defaultUsername)) {
-                user.setUsername(email); // Nếu trùng thì dùng cả email làm username
-            } else {
-                user.setUsername(defaultUsername);
-            }
-
+            user.setUsername(userRepository.existsByUsername(defaultUsername) ? email : defaultUsername);
             user.setEmail(email);
             user.setFullName(name);
             user.setGoogleId(googleId);
             user.setStatus("ACTIVE");
             user.setLoaiDangNhap("GOOGLE");
+            user.setPasswordHash(passwordEncoder.encode("GOOGLE_PWD_" + googleId));
 
-            // Mật khẩu cho user Google nên để một giá trị ngẫu nhiên hoặc mặc định vì họ đăng nhập qua Google
-            user.setPasswordHash(passwordEncoder.encode("GOOGLE_AUTH_SECURE_" + googleId));
-
-            // Gán Role mặc định (Ví dụ: SALES hoặc CUSTOMER)
-            Role defaultRole = roleRepository.findByCode("SALES")
-                    .orElseThrow(() -> new IllegalArgumentException("Không tìm thấy quyền mặc định"));
-            user.getRoles().add(defaultRole);
+            // FIX: Gán quyền CUSTOMER cho user Google mới
+            Role customerRole = roleRepository.findByCode("CUSTOMER")
+                    .orElseThrow(() -> new RuntimeException("Lỗi: Role CUSTOMER chưa có trong DB!"));
+            user.setRoles(Set.of(customerRole));
         }
 
-        // Lưu lại (Update hoặc Insert)
         User savedUser = userRepository.save(user);
-
-        // Ghi log đăng nhập
-        saveAuditLog("GOOGLE_LOGIN", savedUser.getId(), "Đăng nhập bằng Google: " + email, ip, savedUser);
-
+        saveAuditLog("GOOGLE_LOGIN", savedUser.getId(), "Đăng nhập Google", ip, savedUser);
         return savedUser;
     }
 
-    // Hàm ghi log phụ trợ (nếu chưa có trong AuthService)
     private void saveAuditLog(String action, Long entityId, String summary, String ip, User performedBy) {
         AuditLog log = new AuditLog();
         log.setModule("AUTH");

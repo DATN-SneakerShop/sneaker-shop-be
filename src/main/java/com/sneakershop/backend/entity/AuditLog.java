@@ -12,28 +12,33 @@ public class AuditLog {
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
 
-    @Column(name = "module")
+    @Column(name = "module", length = 50)
     private String module;
 
-    @Column(name = "hanh_dong")
+    @Column(name = "hanh_dong", length = 50)
     private String action;
 
-    @Column(name = "doi_tuong")
+    @Column(name = "doi_tuong", length = 50)
     private String entityName;
 
     @Column(name = "doi_tuong_id")
     private Long entityId;
 
-    @Column(name = "tom_tat")
+    @Column(name = "tom_tat", columnDefinition = "TEXT") // Cho phép lưu nội dung dài
     private String summary;
 
-    @Column(name = "ip")
+    @Column(name = "ip", length = 45)
     private String ipAddress;
 
-    @Column(name = "tao_luc")
-    private LocalDateTime createdAt = LocalDateTime.now();
+    @Column(name = "tao_luc", updatable = false)
+    private LocalDateTime createdAt;
 
-    @ManyToOne
-    @JoinColumn(name = "nguoi_thuc_hien_id") // Khớp đúng Database của bạn
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "nguoi_thuc_hien_id", foreignKey = @ForeignKey(name = "FK_AUDIT_USER"))
     private User performedBy;
+
+    @PrePersist
+    protected void onCreate() {
+        this.createdAt = LocalDateTime.now();
+    }
 }

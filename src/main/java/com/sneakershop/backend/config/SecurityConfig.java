@@ -46,19 +46,16 @@ public class SecurityConfig {
                 .authorizeRequests()
                 .antMatchers("/api/auth/**").permitAll()
 
-                // PHÂN QUYỀN API USERS:
-                // 1. Chỉ ADMIN mới được Thêm, Sửa, Xóa
+                // QUAN TRỌNG: Cấu hình quyền cho Logs và Users
+                .antMatchers("/api/management/logs/**").hasAuthority("ADMIN")
                 .antMatchers(HttpMethod.POST, "/api/management/users/**").hasAuthority("ADMIN")
                 .antMatchers(HttpMethod.PUT, "/api/management/users/**").hasAuthority("ADMIN")
                 .antMatchers(HttpMethod.DELETE, "/api/management/users/**").hasAuthority("ADMIN")
-
-                // 2. Các quyền khác (như SALES) chỉ được Xem (GET)
                 .antMatchers(HttpMethod.GET, "/api/management/users/**").authenticated()
 
                 .anyRequest().authenticated();
 
         http.addFilterBefore(jwtAuthenticationFilter, UsernamePasswordAuthenticationFilter.class);
-
         return http.build();
     }
 }
