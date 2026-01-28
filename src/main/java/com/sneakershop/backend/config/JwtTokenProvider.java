@@ -1,7 +1,7 @@
 package com.sneakershop.backend.config;
 
-import com.sneakershop.backend.entity.User;
-import com.sneakershop.backend.entity.Role;
+import com.sneakershop.backend.entity.login.User;
+import com.sneakershop.backend.entity.login.Role;
 import io.jsonwebtoken.Claims;
 import io.jsonwebtoken.Jwts;
 import io.jsonwebtoken.SignatureAlgorithm;

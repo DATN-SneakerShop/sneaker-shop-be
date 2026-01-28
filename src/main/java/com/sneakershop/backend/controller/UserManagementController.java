@@ -1,7 +1,7 @@
 package com.sneakershop.backend.controller;
 
 import com.sneakershop.backend.dto.UserRequest;
-import com.sneakershop.backend.entity.User;
+import com.sneakershop.backend.entity.login.User;
 import com.sneakershop.backend.service.UserService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.ResponseEntity;

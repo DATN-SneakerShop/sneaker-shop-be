@@ -1,9 +1,9 @@
 package com.sneakershop.backend.service;
 
 import com.sneakershop.backend.dto.UserRequest;
-import com.sneakershop.backend.entity.AuditLog;
-import com.sneakershop.backend.entity.Role;
-import com.sneakershop.backend.entity.User;
+import com.sneakershop.backend.entity.login.AuditLog;
+import com.sneakershop.backend.entity.login.Role;
+import com.sneakershop.backend.entity.login.User;
 import com.sneakershop.backend.repository.AuditLogRepository;
 import com.sneakershop.backend.repository.RoleRepository;
 import com.sneakershop.backend.repository.UserRepository;

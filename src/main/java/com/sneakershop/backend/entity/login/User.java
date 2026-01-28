@@ -1,4 +1,4 @@
-package com.sneakershop.backend.entity;
+package com.sneakershop.backend.entity.login;
 
 import com.fasterxml.jackson.annotation.JsonIgnore;
 import lombok.Data;

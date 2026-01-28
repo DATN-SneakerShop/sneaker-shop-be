@@ -1,6 +1,6 @@
 package com.sneakershop.backend.repository;
 
-import com.sneakershop.backend.entity.Role;
+import com.sneakershop.backend.entity.login.Role;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.stereotype.Repository;
 

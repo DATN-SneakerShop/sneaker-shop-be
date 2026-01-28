@@ -1,4 +1,4 @@
-package com.sneakershop.backend.entity;
+package com.sneakershop.backend.entity.login;
 
 import lombok.Data;
 import lombok.NoArgsConstructor;

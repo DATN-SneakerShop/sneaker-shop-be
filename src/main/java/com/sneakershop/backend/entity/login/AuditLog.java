@@ -1,5 +1,6 @@
-package com.sneakershop.backend.entity;
+package com.sneakershop.backend.entity.login;
 
+import com.sneakershop.backend.entity.login.User;
 import lombok.Data;
 import javax.persistence.*;
 import java.time.LocalDateTime;

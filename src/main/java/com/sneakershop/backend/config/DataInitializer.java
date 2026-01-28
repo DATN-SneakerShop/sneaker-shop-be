@@ -1,7 +1,7 @@
 package com.sneakershop.backend.config;
 
-import com.sneakershop.backend.entity.Role;
-import com.sneakershop.backend.entity.User;
+import com.sneakershop.backend.entity.login.Role;
+import com.sneakershop.backend.entity.login.User;
 import com.sneakershop.backend.repository.RoleRepository;
 import com.sneakershop.backend.repository.UserRepository;
 import lombok.RequiredArgsConstructor;
@@ -9,7 +9,6 @@ import org.springframework.boot.CommandLineRunner;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Component;
 
-import java.util.Collections;
 import java.util.List;
 import java.util.Set;
 
