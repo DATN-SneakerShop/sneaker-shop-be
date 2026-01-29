@@ -2,8 +2,10 @@ package com.sneakershop.backend.config;
 
 import com.sneakershop.backend.entity.login.Role;
 import com.sneakershop.backend.entity.login.User;
+import com.sneakershop.backend.entity.pricing.TienTe;
 import com.sneakershop.backend.repository.login.RoleRepository;
 import com.sneakershop.backend.repository.login.UserRepository;
+import com.sneakershop.backend.repository.pricing.TienTeRepository;
 import lombok.RequiredArgsConstructor;
 import org.springframework.boot.CommandLineRunner;
 import org.springframework.security.crypto.password.PasswordEncoder;
@@ -19,6 +21,7 @@ public class DataInitializer implements CommandLineRunner {
     private final RoleRepository roleRepository;
     private final UserRepository userRepository;
     private final PasswordEncoder passwordEncoder;
+    private final TienTeRepository tienTeRepository;
 
     @Override
     public void run(String... args) throws Exception {
@@ -50,6 +53,25 @@ public class DataInitializer implements CommandLineRunner {
 
             userRepository.save(admin);
             System.out.println(">>> Đã tạo tài khoản Admin mặc định (User: admin / Pass: 123456)");
+        }
+        if (!tienTeRepository.existsByMa("VND")) {
+            TienTe vnd = new TienTe();
+            vnd.setMa("VND");
+            vnd.setTen("Việt Nam Đồng");
+            vnd.setKyHieu("₫");
+            vnd.setLaMacDinh(true);
+            tienTeRepository.save(vnd);
+            System.out.println(">>> Đã tạo tiền tệ VND");
+        }
+
+        if (!tienTeRepository.existsByMa("USD")) {
+            TienTe usd = new TienTe();
+            usd.setMa("USD");
+            usd.setTen("Đô la Mỹ");
+            usd.setKyHieu("$");
+            usd.setLaMacDinh(false);
+            tienTeRepository.save(usd);
+            System.out.println(">>> Đã tạo tiền tệ USD");
         }
     }
 }
