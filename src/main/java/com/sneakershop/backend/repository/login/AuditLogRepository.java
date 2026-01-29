@@ -1,4 +1,4 @@
-package com.sneakershop.backend.repository;
+package com.sneakershop.backend.repository.login;
 
 import com.sneakershop.backend.entity.login.AuditLog;
 import com.sneakershop.backend.entity.login.User;

@@ -1,4 +1,4 @@
-package com.sneakershop.backend.dto;
+package com.sneakershop.backend.dto.login;
 
 import lombok.Data;
 import javax.validation.constraints.*;

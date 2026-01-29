@@ -1,4 +1,4 @@
-package com.sneakershop.backend.dto;
+package com.sneakershop.backend.dto.login;
 
 import lombok.AllArgsConstructor;
 import lombok.Builder;

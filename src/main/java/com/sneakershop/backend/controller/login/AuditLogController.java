@@ -1,7 +1,7 @@
-package com.sneakershop.backend.controller;
+package com.sneakershop.backend.controller.login;
 
-import com.sneakershop.backend.dto.AuditLogDTO;
-import com.sneakershop.backend.service.UserService;
+import com.sneakershop.backend.dto.login.AuditLogDTO;
+import com.sneakershop.backend.service.login.UserService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;

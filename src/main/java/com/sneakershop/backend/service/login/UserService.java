@@ -1,12 +1,12 @@
-package com.sneakershop.backend.service;
+package com.sneakershop.backend.service.login;
 
-import com.sneakershop.backend.dto.UserRequest;
+import com.sneakershop.backend.dto.login.UserRequest;
 import com.sneakershop.backend.entity.login.AuditLog;
 import com.sneakershop.backend.entity.login.Role;
 import com.sneakershop.backend.entity.login.User;
-import com.sneakershop.backend.repository.AuditLogRepository;
-import com.sneakershop.backend.repository.RoleRepository;
-import com.sneakershop.backend.repository.UserRepository;
+import com.sneakershop.backend.repository.login.AuditLogRepository;
+import com.sneakershop.backend.repository.login.RoleRepository;
+import com.sneakershop.backend.repository.login.UserRepository;
 import lombok.RequiredArgsConstructor;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;

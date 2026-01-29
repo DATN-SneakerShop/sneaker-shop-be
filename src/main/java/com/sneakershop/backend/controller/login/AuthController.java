@@ -1,12 +1,12 @@
-package com.sneakershop.backend.controller;
+package com.sneakershop.backend.controller.login;
 
 import com.sneakershop.backend.config.JwtTokenProvider;
-import com.sneakershop.backend.dto.LoginRequest;
-import com.sneakershop.backend.dto.UserRequest;
+import com.sneakershop.backend.dto.login.LoginRequest;
+import com.sneakershop.backend.dto.login.UserRequest;
 import com.sneakershop.backend.entity.login.Role;
 import com.sneakershop.backend.entity.login.User;
-import com.sneakershop.backend.service.AuthService;
-import com.sneakershop.backend.service.UserService;
+import com.sneakershop.backend.service.login.AuthService;
+import com.sneakershop.backend.service.login.UserService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
