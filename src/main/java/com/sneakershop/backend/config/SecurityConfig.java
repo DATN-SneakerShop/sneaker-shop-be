@@ -47,6 +47,9 @@ public class SecurityConfig {
                 .antMatchers("/api/auth/**").permitAll()
                 .antMatchers(HttpMethod.GET, "/api/gia/**").permitAll()
                 .antMatchers(HttpMethod.GET, "/api/san-pham/**").permitAll()
+                .antMatchers("/api/products/**").permitAll()
+                .antMatchers("/api/categories/**").permitAll()
+                .antMatchers("/uploads/**").permitAll()
 
                 // QUAN TRỌNG: Cấu hình quyền cho Logs và Users
                 .antMatchers("/api/management/logs/**").hasAuthority("ADMIN")
