@@ -19,7 +19,7 @@ public class User {
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
 
-    @Column(name = "ten_dang_nhap", unique = true, nullable = false, length = 50)
+    @Column(name = "ten_dang_nhap", unique = true, length = 100)
     private String username;
 
     @Column(name = "email", unique = true, nullable = false, length = 100)
@@ -41,6 +41,13 @@ public class User {
     @Column(name = "loai_dang_nhap", length = 20)
     private String loaiDangNhap = "LOCAL";
 
+    // Trường mới cho OTP
+    @Column(name = "otp_code", length = 6)
+    private String otpCode;
+
+    @Column(name = "otp_expiry")
+    private LocalDateTime otpExpiry;
+
     @ManyToMany(fetch = FetchType.EAGER)
     @JoinTable(
             name = "nguoi_dung_vai_tro",
@@ -49,15 +56,7 @@ public class User {
     )
     private Set<Role> roles = new HashSet<>();
 
-    @Column(name = "tao_luc", updatable = false)
-    private LocalDateTime createdAt;
-
     @OneToMany(mappedBy = "performedBy", cascade = CascadeType.ALL)
     @JsonIgnore
     private Set<AuditLog> auditLogs = new HashSet<>();
-
-    @PrePersist
-    protected void onCreate() {
-        this.createdAt = LocalDateTime.now();
-    }
 }
