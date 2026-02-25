@@ -2,8 +2,10 @@ package com.sneakershop.backend.config;
 
 import com.sneakershop.backend.entity.login.Role;
 import com.sneakershop.backend.entity.login.User;
+import com.sneakershop.backend.entity.pricing.Currency;
 import com.sneakershop.backend.repository.login.RoleRepository;
 import com.sneakershop.backend.repository.login.UserRepository;
+import com.sneakershop.backend.repository.pricing.CurrencyRepository;
 import lombok.RequiredArgsConstructor;
 import org.springframework.boot.CommandLineRunner;
 import org.springframework.security.crypto.password.PasswordEncoder;
@@ -19,6 +21,7 @@ public class DataInitializer implements CommandLineRunner {
     private final RoleRepository roleRepository;
     private final UserRepository userRepository;
     private final PasswordEncoder passwordEncoder;
+    private final CurrencyRepository currencyRepository;
 
     @Override
     public void run(String... args) throws Exception {
@@ -51,5 +54,24 @@ public class DataInitializer implements CommandLineRunner {
             userRepository.save(admin);
             System.out.println(">>> Đã tạo tài khoản Admin mặc định (User: admin / Pass: 123456)");
         }
+        if (!currencyRepository.existsByCode("VND")) {
+            Currency vnd = new Currency();
+            vnd.setCode("VND");
+            vnd.setName("Vietnamese Dong");
+            vnd.setSymbol("₫");
+            vnd.setDefault(true);
+            currencyRepository.save(vnd);
+            System.out.println(">>> Created currency VND");
+        }
+
+        if (!currencyRepository.existsByCode("USD")) {
+            Currency usd = new Currency();
+            usd.setCode("USD");
+            usd.setName("US Dollar");
+            usd.setSymbol("$");
+            usd.setDefault(false);
+            currencyRepository.save(usd);
+            System.out.println(">>> Created currency USD");
+        }
     }
-}
+    }

@@ -35,7 +35,9 @@ public class SecurityConfig {
                 .cors().configurationSource(request -> {
             CorsConfiguration config = new CorsConfiguration();
             config.setAllowedOrigins(Arrays.asList("http://localhost:5173"));
-            config.setAllowedMethods(Arrays.asList("GET", "POST", "PUT", "DELETE", "OPTIONS"));
+                    config.setAllowedMethods(Arrays.asList(
+                            "GET", "POST", "PUT", "DELETE", "PATCH", "OPTIONS"
+                    ));
             config.setAllowedHeaders(Arrays.asList("*"));
             config.setAllowCredentials(true);
             return config;
@@ -45,6 +47,18 @@ public class SecurityConfig {
                 .and()
                 .authorizeRequests()
                 .antMatchers("/api/auth/**").permitAll()
+                .antMatchers(HttpMethod.GET, "/api/prices/**").permitAll()
+                .antMatchers(HttpMethod.POST, "/api/pricing/**").permitAll()
+                .antMatchers(HttpMethod.PUT, "/api/pricing/**").permitAll()
+                .antMatchers(HttpMethod.POST, "/api/prices/**").hasAuthority("ADMIN")
+                .antMatchers("/api/products/**").permitAll()
+                .antMatchers("/api/categories/**").permitAll()
+                .antMatchers("/uploads/**").permitAll()
+                .antMatchers("/api/admin/promotions/**").hasAuthority("ADMIN")
+                .antMatchers("/api/admin/products/**").permitAll()
+                .antMatchers(HttpMethod.GET, "/api/pricing/**").permitAll()
+
+
 
                 // QUAN TRỌNG: Cấu hình quyền cho Logs và Users
                 .antMatchers("/api/management/logs/**").hasAuthority("ADMIN")
