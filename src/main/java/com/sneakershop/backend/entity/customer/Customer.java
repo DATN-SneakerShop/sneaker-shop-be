@@ -9,7 +9,7 @@ import java.time.LocalDateTime;
 @Entity
 @Table(name = "khach_hang")
 @Data
-public class KhachHang {
+public class Customer {
 
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
@@ -35,6 +35,13 @@ public class KhachHang {
 
     @Column(name = "tao_luc", updatable = false)
     private LocalDateTime createdAt;
+
+    @Column(name = "diem_tich_luy")
+    private Integer diemTichLuy = 0;
+
+    @Column(name = "ghi_chu", columnDefinition = "TEXT")
+    private String ghiChu;
+
 
     @PrePersist
     protected void onCreate() {
