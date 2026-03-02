@@ -1,10 +1,13 @@
 package com.sneakershop.backend.entity.product;
 
+import com.fasterxml.jackson.annotation.JsonIgnore;
+import com.sneakershop.backend.entity.promotion.Promotion;
 import lombok.Getter;
 import lombok.Setter;
 
 import javax.persistence.*;
 import java.math.BigDecimal;
+import java.util.List;
 
 @Entity
 @Getter
@@ -48,5 +51,8 @@ public class ProductVariant {
     @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "product_id", nullable = false)
     private Product product;
+    @ManyToMany(mappedBy = "variants")
+    @JsonIgnore
+    private List<Promotion> promotions;
 }
 

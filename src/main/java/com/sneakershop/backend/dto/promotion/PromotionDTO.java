@@ -87,20 +87,24 @@ public class PromotionDTO {
 
         return dto;
     }
-
-    /** ✅ LẤY GIÁ HIỆN TẠI CỦA VARIANT */
+    
+    /** ✅ LẤY GIÁ HIỆN TẠI CỦA VARIANT (theo entity main) */
     private static BigDecimal getCurrentPrice(ProductVariant v) {
-        if (v.getPrices() == null || v.getPrices().isEmpty()) {
+
+        if (v == null) {
             return BigDecimal.ZERO;
         }
 
-        return v.getPrices().stream()
-                .filter(p -> p.getEndDate() == null) // giá đang active
-                .max(Comparator.comparing(ProductPrice::getStartDate))
-                .map(ProductPrice::getPrice)
-                .orElse(BigDecimal.ZERO);
-    }
+        // ưu tiên salePrice nếu có
+        if (v.getSalePrice() != null
+                && v.getSalePrice().compareTo(BigDecimal.ZERO) > 0) {
+            return v.getSalePrice();
+        }
 
+        return v.getPrice() != null
+                ? v.getPrice()
+                : BigDecimal.ZERO;
+    }
     /** ✅ TÍNH GIÁ SAU GIẢM */
     private static BigDecimal calculateDiscountPrice(
             BigDecimal price,

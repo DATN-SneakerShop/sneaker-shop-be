@@ -1,0 +1,14 @@
+package com.sneakershop.backend.dto.product;
+
+import lombok.Data;
+import java.math.BigDecimal;
+
+@Data
+public class VariantResponse {
+    private Long variantId;
+    private String sku;
+    private String colorway;
+    private String size;
+    private BigDecimal price;
+    private Integer stock;
+}

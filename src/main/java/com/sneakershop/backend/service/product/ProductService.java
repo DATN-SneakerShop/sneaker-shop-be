@@ -2,12 +2,14 @@ package com.sneakershop.backend.service.product;
 
 import com.sneakershop.backend.dto.product.*;
 import com.sneakershop.backend.entity.product.*;
+import com.sneakershop.backend.repository.pricing.ProductPriceRepository;
 import com.sneakershop.backend.repository.product.*;
 import lombok.RequiredArgsConstructor;
 import org.springframework.data.domain.*;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import javax.persistence.EntityNotFoundException;
+import java.math.BigDecimal;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.List;
@@ -21,6 +23,7 @@ public class ProductService {
     private final ProductRepository productRepository;
     private final ProductVariantRepository productVariantRepository;
     private final CategoryRepository categoryRepository;
+    private final ProductPriceRepository productPriceRepository;
     private static final String IMAGE_PREFIX = "/uploads/";
     private static final Map<String, String> STATUS_LABEL = Map.of(
             "Còn hàng", "Còn hàng",
@@ -453,5 +456,35 @@ public class ProductService {
         );
 
         return res;
+    }
+    public List<VariantResponse> getVariantsByProduct(Long productId) {
+
+        Product product = productRepository.findById(productId)
+                .orElseThrow(() -> new RuntimeException("Product not found"));
+
+        return product.getVariants().stream().map(v -> {
+
+            VariantResponse vr = new VariantResponse();
+            vr.setVariantId(v.getId());
+            vr.setSku(v.getSku());
+            vr.setSize(v.getSize());
+            vr.setColorway(v.getColorway());
+            vr.setStock(v.getStock());
+
+            vr.setPrice(
+                    productPriceRepository
+                            .findByVariant_IdAndEndDateIsNull(v.getId())
+                            .map(pp -> pp.getPrice())
+                            .orElse(BigDecimal.ZERO)
+            );
+
+            return vr;
+        }).toList();
+    }
+    public List<ProductSimpleResponse> getAll() {
+        return productRepository.findAllSimpleWithVariantCount();
+    }
+    public List<ProductSimpleResponse> getAllForPromotionEdit(Long promotionId) {
+        return productRepository.findAllSimpleForPromotionEdit(promotionId);
     }
 }
