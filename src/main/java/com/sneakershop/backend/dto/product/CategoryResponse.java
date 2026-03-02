@@ -3,8 +3,10 @@ package com.sneakershop.backend.dto.product;
 import lombok.Data;
 
 @Data
-public class CategoryRequest {
+public class CategoryResponse {
+
+    private Long id;
     private String name;
     private String description;
-    private String thumbnail;
+    private String thumbnail;   //
 }

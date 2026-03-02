@@ -6,14 +6,21 @@ import java.math.BigDecimal;
 
 @Data
 public class VariantRequest {
+    private Long id;          // 👈 thêm dòng này
 
+    // Có thể BE tự generate, FE không cần gửi
     private String sku;
-    private String size;       // US 8, 9, 10
-    private String colorway;   // Black/Red
+
+    private String size;         // 8, 9, 10
+    private String sizeType;     // US / EU / UK   ✅ BẮT BUỘC
+
+    private String colorway;     // Black/Red
 
     private BigDecimal price;
     private BigDecimal salePrice;
 
     private int stock;
-    private String status;     // IN_STOCK / OUT_OF_STOCK
+
+    // Optional – BE đang auto theo stock
+    private String status;
 }

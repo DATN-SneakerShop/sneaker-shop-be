@@ -13,12 +13,31 @@ public class ProductVariantController {
 
     private final ProductVariantService variantService;
 
-    // ✅ Thêm size / SKU cho sản phẩm
+    /* ================== CREATE ================== */
     @PostMapping
     public ProductVariant create(
             @PathVariable Long productId,
             @RequestBody VariantRequest request
     ) {
         return variantService.create(productId, request);
+    }
+
+    /* ================== UPDATE ================== */
+    @PutMapping("/{variantId}")
+    public ProductVariant update(
+            @PathVariable Long productId,
+            @PathVariable Long variantId,
+            @RequestBody VariantRequest request
+    ) {
+        return variantService.update(productId, variantId, request);
+    }
+
+    /* ================== DELETE ================== */
+    @DeleteMapping("/{variantId}")
+    public void delete(
+            @PathVariable Long productId,
+            @PathVariable Long variantId
+    ) {
+        variantService.delete(productId, variantId);
     }
 }

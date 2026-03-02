@@ -1,23 +1,21 @@
 package com.sneakershop.backend.entity.product;
 
-import com.fasterxml.jackson.annotation.JsonIgnore;
-import com.sneakershop.backend.entity.pricing.ProductPrice;
-import com.sneakershop.backend.entity.promotion.Promotion;
 import lombok.Getter;
 import lombok.Setter;
 
 import javax.persistence.*;
-import java.util.List;
+import java.math.BigDecimal;
 
 @Entity
 @Getter
 @Setter
 @Table(
         name = "product_variant",
-        uniqueConstraints = @UniqueConstraint(columnNames = "sku"),
-        indexes = {
-                @Index(name = "idx_variant_product", columnList = "product_id"),
-                @Index(name = "idx_variant_sku", columnList = "sku")
+        uniqueConstraints = {
+                @UniqueConstraint(columnNames = "sku"),
+                @UniqueConstraint(
+                        columnNames = {"product_id", "size", "sizeType", "colorway"}
+                )
         }
 )
 public class ProductVariant {
@@ -26,30 +24,29 @@ public class ProductVariant {
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
 
-    @Column(nullable = false)
+    @Column(nullable = false, unique = true)
     private String sku;
 
+    @Column(name = "size")
     private String size;
+
+    // ❗ KHÔNG snake_case
+    @Column(name = "sizeType")
+    private String sizeType;
+
+    @Column(name = "colorway")
     private String colorway;
 
-    @Column(nullable = false)
     private int stock;
+    private String status;
+    @Column(nullable = false)
+    private BigDecimal price;
 
-    private String status; // IN_STOCK / OUT_OF_STOCK
+    @Column
+    private BigDecimal salePrice;
 
-    // FK sang Product
     @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "product_id", nullable = false)
-    @JsonIgnore
     private Product product;
-
-
-    // Lịch sử giá
-    @OneToMany(mappedBy = "variant")
-    @JsonIgnore
-    private List<ProductPrice> prices;
-
-    @ManyToMany(mappedBy = "variants")
-    @JsonIgnore
-    private List<Promotion> promotions;
 }
+

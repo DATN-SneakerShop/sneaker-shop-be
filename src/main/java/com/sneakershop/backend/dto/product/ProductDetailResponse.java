@@ -2,28 +2,35 @@ package com.sneakershop.backend.dto.product;
 
 import lombok.Data;
 
-import java.math.BigDecimal;
 import java.util.List;
 
 @Data
-public class ProductResponse {
+public class ProductDetailResponse {
 
     private Long id;
     private String name;
     private String sku;
-    private String description;
-    private String status;
+
     private String brand;
+    private String model;
+    private String releaseYear;
+
     private String gender;
     private String releaseType;
+    private String status;
 
-    private String thumbnail;        // URL ảnh
+    private String material;
+    private Boolean limited;
 
-    private BigDecimal priceFrom;    // giá thấp nhất (optional, FE dùng list)
+    private String description;
 
-    // ✅ NHIỀU CATEGORY
+    /* ================== CATEGORY ================== */
     private List<Long> categoryIds;
     private List<String> categoryNames;
+
+    /* ================== IMAGES ================== */
     private List<ProductImageResponse> images;
+
+    /* ================== VARIANTS ================== */
     private List<ProductVariantResponse> variants;
 }
