@@ -2,6 +2,10 @@ package com.sneakershop.backend.entity.product;
 
 import com.fasterxml.jackson.annotation.JsonIgnore;
 import com.sneakershop.backend.entity.promotion.Promotion;
+// 🔥 Import thêm 2 entity bảng giá
+import com.sneakershop.backend.entity.pricing.ProductPrice;
+import com.sneakershop.backend.entity.pricing.VariantPriceGroup;
+
 import lombok.Getter;
 import lombok.Setter;
 
@@ -33,7 +37,6 @@ public class ProductVariant {
     @Column(name = "size")
     private String size;
 
-    // ❗ KHÔNG snake_case
     @Column(name = "sizeType")
     private String sizeType;
 
@@ -42,7 +45,8 @@ public class ProductVariant {
 
     private int stock;
     private String status;
-    @Column(nullable = false)
+
+    @Column
     private BigDecimal price;
 
     @Column
@@ -51,8 +55,18 @@ public class ProductVariant {
     @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "product_id", nullable = false)
     private Product product;
+
     @ManyToMany(mappedBy = "variants")
     @JsonIgnore
     private List<Promotion> promotions;
-}
 
+    // 🔥 FIX LỖI 500: Tự động xóa dữ liệu ở bảng lịch sử giá khi xóa sản phẩm
+    @OneToMany(mappedBy = "variant", cascade = CascadeType.ALL, orphanRemoval = true)
+    @JsonIgnore
+    private List<ProductPrice> productPrices;
+
+    // 🔥 FIX LỖI 500: Tự động xóa dữ liệu ở bảng giá nhóm khách khi xóa sản phẩm
+    @OneToMany(mappedBy = "variant", cascade = CascadeType.ALL, orphanRemoval = true)
+    @JsonIgnore
+    private List<VariantPriceGroup> variantPriceGroups;
+}

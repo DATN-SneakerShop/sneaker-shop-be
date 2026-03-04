@@ -2,6 +2,7 @@ package com.sneakershop.backend.service.product;
 
 import com.sneakershop.backend.dto.product.*;
 import com.sneakershop.backend.entity.product.*;
+import com.sneakershop.backend.entity.pricing.ProductPrice;
 import com.sneakershop.backend.repository.pricing.ProductPriceRepository;
 import com.sneakershop.backend.repository.product.*;
 import lombok.RequiredArgsConstructor;
@@ -11,7 +12,6 @@ import org.springframework.transaction.annotation.Transactional;
 import javax.persistence.EntityNotFoundException;
 import java.math.BigDecimal;
 import java.time.LocalDateTime;
-import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.stream.Collectors;
@@ -24,24 +24,20 @@ public class ProductService {
     private final ProductVariantRepository productVariantRepository;
     private final CategoryRepository categoryRepository;
     private final ProductPriceRepository productPriceRepository;
-    private static final String IMAGE_PREFIX = "/uploads/";
+
     private static final Map<String, String> STATUS_LABEL = Map.of(
             "Còn hàng", "Còn hàng",
             "Hết hàng", "Hết hàng",
             "Đặt trước", "Đặt trước",
             "Ngừng bán", "Ngừng bán"
     );
-    /* =====================================================
-       CREATE PRODUCT + VARIANTS
-    ===================================================== */
+
     @Transactional
     public ProductResponse create(ProductRequest request) {
-
         if (productRepository.existsBySku(request.getSku())) {
             throw new IllegalArgumentException("Product SKU already exists");
         }
 
-        /* ===== CREATE PRODUCT ===== */
         Product product = new Product();
         product.setName(request.getName());
         product.setSku(request.getSku());
@@ -49,421 +45,100 @@ public class ProductService {
         product.setModel(request.getModel());
         product.setReleaseYear(request.getReleaseYear());
         product.setGender(request.getGender());
-        product.setReleaseType(request.getReleaseType());
-        product.setStatus(request.getStatus());
-        product.setMaterial(request.getMaterial());
-        product.setLimited(Boolean.TRUE.equals(request.getLimited()));
-        product.setDescription(request.getDescription());
+        product.setStatus(request.getStatus() != null ? request.getStatus() : "Còn hàng");
         product.setThumbnail(request.getThumbnail());
         product.setCreatedAt(LocalDateTime.now());
 
-        /* ===== CATEGORY ===== */
-        product.setCategories(
-                categoryRepository.findAllById(request.getCategoryIds())
-        );
-        /* ===== IMAGES ===== */
-        List<ProductImage> images = new ArrayList<>();
+        product.setDescription(request.getDescription());
+        product.setMaterial(request.getMaterial());
+        product.setReleaseType(request.getReleaseType());
+        product.setLimited(Boolean.TRUE.equals(request.getLimited()));
 
-        for (ProductImageRequest imgReq : request.getImages()) {
+        product.setCategories(categoryRepository.findAllById(request.getCategoryIds()));
+
+        List<ProductImage> images = request.getImages().stream().map(imgReq -> {
             ProductImage img = new ProductImage();
             img.setImageUrl(imgReq.getImageUrl());
             img.setThumbnail(imgReq.isThumbnail());
-            img.setProduct(product); // 🔥 DÒNG QUYẾT ĐỊNH
-            images.add(img);
-        }
-
-// gắn vào product để cascade save
+            img.setProduct(product);
+            return img;
+        }).collect(Collectors.toList());
         product.setImages(images);
-        productRepository.save(product);
-        /* ===== VARIANTS ===== */
-        List<ProductVariant> variants = new ArrayList<>();
 
-        for (VariantRequest v : request.getVariants()) {
+        List<ProductVariant> variants = request.getVariants().stream().map(vReq -> {
+            ProductVariant v = new ProductVariant();
+            v.setProduct(product);
+            v.setSize(vReq.getSize());
+            v.setSizeType(vReq.getSizeType());
+            v.setColorway(vReq.getColorway());
 
-            if (v.getSize() == null || v.getSizeType() == null || v.getColorway() == null) {
-                throw new IllegalArgumentException(
-                        "Variant size, sizeType, colorway are required"
-                );
-            }
+            // 🔥 NẾU FE KHÔNG GỬI GIÁ -> GÁN MẶC ĐỊNH BẰNG 0 ĐỂ CHỜ SET GIÁ SAU
+            v.setPrice(vReq.getPrice() != null ? vReq.getPrice() : BigDecimal.ZERO);
 
-            if (productVariantRepository
-                    .existsByProduct_IdAndSizeAndSizeTypeAndColorway(
-                            product.getId(),
-                            v.getSize(),
-                            v.getSizeType(),
-                            v.getColorway()
-                    )) {
-                throw new IllegalArgumentException(
-                        "Duplicate variant: size + sizeType + colorway"
-                );
-            }
-
-            ProductVariant variant = new ProductVariant();
-            variant.setProduct(product);
-            variant.setSize(v.getSize());
-            variant.setSizeType(v.getSizeType());
-            variant.setColorway(v.getColorway());
-            if (v.getPrice() == null) {
-                throw new IllegalArgumentException("Variant price is required");
-            }
-            variant.setPrice(v.getPrice());
-            variant.setSalePrice(v.getSalePrice());
-            variant.setStock(v.getStock());
-            variant.setStatus(
-                    v.getStock() > 0 ? "Còn_hàng" : "Hết_Hàng"
-            );
-
-            String sku = generateVariantSku(product, v);
-
-            if (productVariantRepository.existsBySku(sku)) {
-                throw new IllegalArgumentException("Variant SKU already exists: " + sku);
-            }
-
-            variant.setSku(sku);
-            variants.add(variant);
-        }
-
-        productVariantRepository.saveAll(variants);
+            v.setStock(vReq.getStock());
+            v.setStatus(vReq.getStock() > 0 ? "Còn hàng" : "Hết hàng");
+            v.setSku(generateVariantSku(product, vReq));
+            return v;
+        }).collect(Collectors.toList());
         product.setVariants(variants);
 
-        return toListResponse(product);
+        return toListResponse(productRepository.save(product));
     }
 
-    /* =====================================================
-       LIST DEFAULT
-    ===================================================== */
-    public Page<ProductResponse> getProducts(Pageable pageable) {
-        return productRepository
-                .findAll(pageable)
-                .map(this::toListResponse);
-    }
-/* =====================================================
-   SEARCH MULTI CATEGORY + KEYWORD
-===================================================== */
-    public Page<ProductResponse> searchProducts(
-            List<Long> categoryIds,
-            String keyword,
-            int page,
-            int size
-    ) {
-        if (keyword != null && keyword.isBlank()) {
-            keyword = null;
-        }
-
+    public Page<ProductResponse> searchProducts(List<Long> categoryIds, String keyword, int page, int size) {
         Pageable pageable = PageRequest.of(page, size);
-
-        // Nếu không lọc category → lấy tất cả
-        if (categoryIds == null || categoryIds.isEmpty()) {
-            return productRepository
-                    .findAll(pageable)
-                    .map(this::toListResponse);
-        }
-
-        Page<Product> productPage =
-                productRepository.searchProducts(
-                        categoryIds,
-                        keyword,
-                        categoryIds.size(),   // 👈 thêm dòng này
-                        pageable
-                );
-
-        return productPage.map(this::toListResponse);
+        return productRepository.searchProducts(categoryIds, keyword, (long) categoryIds.size(), pageable).map(this::toListResponse);
     }
-    /* =====================================================
-       SEARCH ADVANCED
-    ===================================================== */
-    public Page<ProductResponse> searchAdvanced(
-            ProductSearchRequest request,
-            Pageable pageable
-    ) {
 
-        String sort = request.getSort();
-        String sortPrice = request.getSortPrice();
-
-        // 🔥 1. ƯU TIÊN BÁN CHẠY
-        if ("best_seller".equalsIgnoreCase(sort)) {
-            return productRepository
-                    .findBestSellingProducts(pageable)
-                    .map(this::toListResponse);
-        }
-
-        // 🔥 2. MỚI NHẤT
-        if ("newest".equalsIgnoreCase(sort)) {
-            Pageable p = PageRequest.of(
-                    pageable.getPageNumber(),
-                    pageable.getPageSize(),
-                    Sort.by("createdAt").descending()
-            );
-
-            return productRepository
-                    .findAll(ProductSpecification.build(request), p)
-                    .map(this::toListResponse);
-        }
-
-        // 🔥 3. SORT GIÁ (GIỮ NGUYÊN LOGIC CŨ)
-        if ("asc".equalsIgnoreCase(sortPrice)) {
-            Pageable p = PageRequest.of(
-                    pageable.getPageNumber(),
-                    pageable.getPageSize(),
-                    Sort.by("id").ascending()
-            );
-
-            return productRepository
-                    .findAll(ProductSpecification.build(request), p)
-                    .map(this::toListResponse);
-        }
-
-        if ("desc".equalsIgnoreCase(sortPrice)) {
-            Pageable p = PageRequest.of(
-                    pageable.getPageNumber(),
-                    pageable.getPageSize(),
-                    Sort.by("id").descending()
-            );
-
-            return productRepository
-                    .findAll(ProductSpecification.build(request), p)
-                    .map(this::toListResponse);
-        }
-
-        // 🔥 DEFAULT
-        return productRepository
-                .findAll(ProductSpecification.build(request), pageable)
-                .map(this::toListResponse);
+    public Page<ProductResponse> getProducts(Pageable pageable) {
+        return productRepository.findAll(pageable).map(this::toListResponse);
     }
-    /* =====================================================
-       DETAIL
-    ===================================================== */
+
+    public Page<ProductResponse> searchAdvanced(ProductSearchRequest request, Pageable pageable) {
+        return productRepository.findAll(ProductSpecification.build(request), pageable).map(this::toListResponse);
+    }
+
     @Transactional(readOnly = true)
     public ProductDetailResponse getById(Long id) {
-
-        Product product = productRepository.findDetailById(id)
-                .orElseThrow(() ->
-                        new EntityNotFoundException("Product not found: " + id)
-                );
-
-        return toDetailResponse(product);
+        Product p = productRepository.findDetailById(id).orElseThrow(() -> new EntityNotFoundException("Not found"));
+        return toDetailResponse(p);
     }
 
-    /* =====================================================
-       UPDATE PRODUCT + VARIANTS
-    ===================================================== */
     @Transactional
     public ProductResponse update(Long id, ProductRequest request) {
+        Product p = productRepository.findById(id).orElseThrow(() -> new EntityNotFoundException("Product not found"));
+        p.setName(request.getName());
+        p.setBrand(request.getBrand());
+        p.setThumbnail(request.getThumbnail());
+        p.setCategories(categoryRepository.findAllById(request.getCategoryIds()));
 
-        Product product = productRepository.findById(id)
-                .orElseThrow(() ->
-                        new EntityNotFoundException("Product not found: " + id)
-                );
+        p.setModel(request.getModel());
+        p.setReleaseYear(request.getReleaseYear());
+        p.setGender(request.getGender());
+        p.setStatus(request.getStatus());
+        p.setDescription(request.getDescription());
+        p.setMaterial(request.getMaterial());
+        p.setReleaseType(request.getReleaseType());
+        p.setLimited(Boolean.TRUE.equals(request.getLimited()));
 
-        /* ===== BASIC INFO ===== */
-        product.setName(request.getName());
-        product.setBrand(request.getBrand());
-        product.setModel(request.getModel());
-        product.setReleaseYear(request.getReleaseYear());
-        product.setGender(request.getGender());
-        product.setReleaseType(request.getReleaseType());
-        product.setStatus(request.getStatus());
-        product.setMaterial(request.getMaterial());
-        product.setLimited(Boolean.TRUE.equals(request.getLimited()));
-        product.setDescription(request.getDescription());
-        product.setThumbnail(request.getThumbnail());
-
-        /* ===== CATEGORY ===== */
-        product.setCategories(
-                categoryRepository.findAllById(request.getCategoryIds())
-        );
-
-        /* ===== VARIANTS ===== */
-        List<ProductVariant> existingVariants = product.getVariants();
-        List<Long> requestVariantIds = request.getVariants()
-                .stream()
-                .map(VariantRequest::getId)
-                .filter(idVar -> idVar != null)
-                .toList();
-
-        // ❌ remove variant bị xóa
-        existingVariants.removeIf(
-                v -> v.getId() != null && !requestVariantIds.contains(v.getId())
-        );
-
-        for (VariantRequest v : request.getVariants()) {
-
-            ProductVariant variant;
-
-            if (v.getId() != null) {
-                variant = existingVariants.stream()
-                        .filter(ev -> ev.getId().equals(v.getId()))
-                        .findFirst()
-                        .orElseThrow(() ->
-                                new EntityNotFoundException("Variant not found: " + v.getId())
-                        );
-            } else {
-                variant = new ProductVariant();
-                variant.setProduct(product);
-                existingVariants.add(variant);
-            }
-
-            variant.setSize(v.getSize());
-            variant.setSizeType(v.getSizeType());
-            variant.setColorway(v.getColorway());
-            variant.setPrice(v.getPrice());
-            variant.setSalePrice(v.getSalePrice());
-            variant.setStock(v.getStock());
-            variant.setStatus(
-                    v.getStock() > 0 ? "CÒN_HÀNG" : "HẾT_HÀNG"
-            );
-        }
-
-        productRepository.save(product);
-        return toListResponse(product);
+        return toListResponse(productRepository.save(p));
     }
 
-    /* =====================================================
-       DELETE PRODUCT
-    ===================================================== */
-    @Transactional
     public void delete(Long id) {
-
-        Product product = productRepository.findById(id)
-                .orElseThrow(() ->
-                        new EntityNotFoundException("Product not found: " + id)
-                );
-
-        productRepository.delete(product);
+        productRepository.deleteById(id);
     }
 
-    /* =====================================================
-       SKU GENERATOR
-    ===================================================== */
-    private String generateVariantSku(Product product, VariantRequest v) {
-        return String.format(
-                "%s-%s-%s-%s%s",
-                safe(product.getModel()),
-                safe(v.getColorway()).replace("/", "").replace(" ", ""),
-                product.getReleaseYear() != null ? product.getReleaseYear() : "NA",
-                v.getSize(),
-                v.getSizeType()
-        ).toUpperCase();
+    public List<ProductSimpleResponse> getAll() {
+        return productRepository.findAllSimpleWithVariantCount();
     }
 
-    private String safe(String value) {
-        return value == null ? "NA" : value;
+    public List<ProductSimpleResponse> getAllForPromotionEdit(Long promotionId) {
+        return productRepository.findAllSimpleForPromotionEdit(promotionId);
     }
 
-    /* =====================================================
-       LIST RESPONSE MAPPER
-    ===================================================== */
-    private ProductResponse toListResponse(Product product) {
-
-        ProductResponse res = new ProductResponse();
-        res.setId(product.getId());
-        res.setName(product.getName());
-        res.setSku(product.getSku());
-        res.setDescription(product.getDescription());
-        res.setStatus(
-                STATUS_LABEL.getOrDefault(
-                        product.getStatus(),
-                        product.getStatus()
-                )
-        );
-        res.setBrand(product.getBrand());
-        res.setGender(product.getGender());
-        res.setReleaseType(product.getReleaseType());
-        res.setThumbnail(product.getThumbnail());
-
-        if (product.getCategories() != null) {
-            res.setCategoryIds(
-                    product.getCategories()
-                            .stream()
-                            .map(Category::getId)
-                            .collect(Collectors.toList())
-            );
-
-            res.setCategoryNames(
-                    product.getCategories()
-                            .stream()
-                            .map(Category::getName)
-                            .collect(Collectors.toList())
-            );
-        }
-        return res;
-    }
-
-    /* =====================================================
-       DETAIL RESPONSE MAPPER
-    ===================================================== */
-    private ProductDetailResponse toDetailResponse(Product product) {
-
-        ProductDetailResponse res = new ProductDetailResponse();
-
-        res.setId(product.getId());
-        res.setName(product.getName());
-        res.setSku(product.getSku());
-        res.setBrand(product.getBrand());
-        res.setModel(product.getModel());
-        res.setReleaseYear(product.getReleaseYear());
-        res.setGender(product.getGender());
-        res.setReleaseType(product.getReleaseType());
-        res.setStatus(product.getStatus());
-        res.setMaterial(product.getMaterial());
-        res.setLimited(product.getLimited());
-        res.setDescription(product.getDescription());
-
-        res.setCategoryIds(
-                product.getCategories()
-                        .stream()
-                        .map(Category::getId)
-                        .collect(Collectors.toList())
-        );
-
-        res.setCategoryNames(
-                product.getCategories()
-                        .stream()
-                        .map(Category::getName)
-                        .collect(Collectors.toList())
-        );
-
-        res.setImages(
-                product.getImages()
-                        .stream()
-                        .map(img -> {
-                            ProductImageResponse i = new ProductImageResponse();
-                            i.setId(img.getId());
-                            i.setUrl(img.getImageUrl());
-                            i.setThumbnail(img.isThumbnail());
-                            return i;
-                        })
-                        .collect(Collectors.toList())
-        );
-
-        res.setVariants(
-                product.getVariants()
-                        .stream()
-                        .map(v -> {
-                            ProductVariantResponse vr = new ProductVariantResponse();
-                            vr.setId(v.getId());
-                            vr.setSku(v.getSku());
-                            vr.setSize(v.getSize());
-                            vr.setSizeType(v.getSizeType());
-                            vr.setColorway(v.getColorway());
-                            vr.setStock(v.getStock());
-                            vr.setStatus(v.getStatus());
-                            vr.setPrice(v.getPrice());
-                            vr.setSalePrice(v.getSalePrice());
-                            return vr;
-                        })
-                        .collect(Collectors.toList())
-        );
-
-        return res;
-    }
     public List<VariantResponse> getVariantsByProduct(Long productId) {
-
-        Product product = productRepository.findById(productId)
-                .orElseThrow(() -> new RuntimeException("Product not found"));
-
+        Product product = productRepository.findById(productId).orElseThrow(() -> new RuntimeException("Not found"));
         return product.getVariants().stream().map(v -> {
-
             VariantResponse vr = new VariantResponse();
             vr.setVariantId(v.getId());
             vr.setSku(v.getSku());
@@ -471,20 +146,82 @@ public class ProductService {
             vr.setColorway(v.getColorway());
             vr.setStock(v.getStock());
 
-            vr.setPrice(
-                    productPriceRepository
-                            .findByVariant_IdAndEndDateIsNull(v.getId())
-                            .map(pp -> pp.getPrice())
-                            .orElse(BigDecimal.ZERO)
-            );
+            // Lấy giá trị đang áp dụng từ bảng ProductPrice
+            BigDecimal activePrice = productPriceRepository.findByVariant_IdAndEndDateIsNull(v.getId())
+                    .map(ProductPrice::getPrice)
+                    .orElse(v.getPrice() != null ? v.getPrice() : BigDecimal.ZERO);
+            vr.setPrice(activePrice);
 
             return vr;
-        }).toList();
+        }).collect(Collectors.toList());
     }
-    public List<ProductSimpleResponse> getAll() {
-        return productRepository.findAllSimpleWithVariantCount();
+
+    private String generateVariantSku(Product product, VariantRequest v) {
+        return (product.getModel() + "-" + v.getColorway() + "-" + v.getSize()).toUpperCase().replace(" ", "");
     }
-    public List<ProductSimpleResponse> getAllForPromotionEdit(Long promotionId) {
-        return productRepository.findAllSimpleForPromotionEdit(promotionId);
+
+    private ProductResponse toListResponse(Product p) {
+        ProductResponse res = new ProductResponse();
+        res.setId(p.getId());
+        res.setName(p.getName());
+        res.setSku(p.getSku());
+        res.setStatus(STATUS_LABEL.getOrDefault(p.getStatus(), p.getStatus()));
+        res.setThumbnail(p.getThumbnail());
+        return res;
+    }
+
+    private ProductDetailResponse toDetailResponse(Product p) {
+        ProductDetailResponse res = new ProductDetailResponse();
+        res.setId(p.getId());
+        res.setName(p.getName());
+        res.setSku(p.getSku());
+        res.setBrand(p.getBrand());
+        res.setModel(p.getModel());
+        res.setStatus(p.getStatus());
+        res.setThumbnail(p.getThumbnail());
+
+        res.setReleaseYear(p.getReleaseYear());
+        res.setGender(p.getGender());
+        res.setReleaseType(p.getReleaseType());
+        res.setMaterial(p.getMaterial());
+        res.setLimited(p.getLimited());
+        res.setDescription(p.getDescription());
+
+        if (p.getCategories() != null) {
+            res.setCategoryIds(p.getCategories().stream().map(Category::getId).collect(Collectors.toList()));
+            res.setCategoryNames(p.getCategories().stream().map(Category::getName).collect(Collectors.toList()));
+        }
+
+        if (p.getImages() != null) {
+            res.setImages(p.getImages().stream().map(img -> {
+                ProductImageResponse imgRes = new ProductImageResponse();
+                imgRes.setId(img.getId());
+                imgRes.setUrl(img.getImageUrl());
+                imgRes.setThumbnail(img.isThumbnail());
+                return imgRes;
+            }).collect(Collectors.toList()));
+        }
+
+        if (p.getVariants() != null) {
+            res.setVariants(p.getVariants().stream().map(v -> {
+                ProductVariantResponse vRes = new ProductVariantResponse();
+                vRes.setId(v.getId());
+                vRes.setSku(v.getSku());
+                vRes.setSize(v.getSize());
+                vRes.setSizeType(v.getSizeType());
+                vRes.setColorway(v.getColorway());
+                vRes.setStock(v.getStock());
+
+                // 🔥 Lấy giá từ bảng ProductPrice
+                BigDecimal activePrice = productPriceRepository.findByVariant_IdAndEndDateIsNull(v.getId())
+                        .map(ProductPrice::getPrice)
+                        .orElse(v.getPrice() != null ? v.getPrice() : BigDecimal.ZERO);
+                vRes.setPrice(activePrice);
+
+                return vRes;
+            }).collect(Collectors.toList()));
+        }
+
+        return res;
     }
 }

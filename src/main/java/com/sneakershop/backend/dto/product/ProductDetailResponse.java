@@ -1,7 +1,6 @@
 package com.sneakershop.backend.dto.product;
 
 import lombok.Data;
-
 import java.util.List;
 
 @Data
@@ -23,6 +22,7 @@ public class ProductDetailResponse {
     private Boolean limited;
 
     private String description;
+    private String thumbnail; // ✅ Đã thêm để fix lỗi setThumbnail
 
     /* ================== CATEGORY ================== */
     private List<Long> categoryIds;

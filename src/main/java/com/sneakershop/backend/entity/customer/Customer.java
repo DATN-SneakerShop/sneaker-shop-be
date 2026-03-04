@@ -1,7 +1,6 @@
 package com.sneakershop.backend.entity.customer;
 
 import lombok.Data;
-
 import javax.persistence.*;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
@@ -10,7 +9,6 @@ import java.time.LocalDateTime;
 @Table(name = "khach_hang")
 @Data
 public class Customer {
-
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
@@ -21,14 +19,13 @@ public class Customer {
     @Column(name = "email", nullable = false, unique = true, length = 100)
     private String email;
 
-    @Column(name = "so_dien_thoai", nullable = false, unique = true, length = 20)
-    private String soDienThoai;
+    // 🔥 ĐÃ XOÁ BỎ HOÀN TOÀN TRƯỜNG SO_DIEN_THOAI THEO LỆNH CỦA MÀY
 
     @Column(name = "ngay_sinh")
     private LocalDate ngaySinh;
 
     @Column(name = "loai_khach", length = 20)
-    private String loaiKhach = "NORMAL"; // VIP | NORMAL
+    private String loaiKhach = "NORMAL";
 
     @Column(name = "trang_thai", length = 20)
     private String status = "ACTIVE";
@@ -41,7 +38,6 @@ public class Customer {
 
     @Column(name = "ghi_chu", columnDefinition = "TEXT")
     private String ghiChu;
-
 
     @PrePersist
     protected void onCreate() {

@@ -25,9 +25,10 @@ public class ProductPrice {
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
 
-    // FK → product_variant.id
+    // 🔥 FIX LỖI VÒNG LẶP: Thêm @JsonIgnore để ngắt đứt vòng lặp khi trả về Frontend
     @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "variant_id", nullable = false)
+    @JsonIgnore
     private ProductVariant variant;
 
     // FK → currency.id

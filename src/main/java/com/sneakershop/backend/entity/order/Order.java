@@ -1,7 +1,7 @@
 package com.sneakershop.backend.entity.order;
 
 import com.fasterxml.jackson.annotation.JsonIgnore;
-import com.sneakershop.backend.entity.customer.KhachHang;
+import com.sneakershop.backend.entity.customer.Customer;
 import com.sneakershop.backend.entity.login.User;
 import com.sneakershop.backend.entity.order.enums.*;
 import lombok.Data;
@@ -45,7 +45,7 @@ public class Order {
     // chọn khách khi tạo đơn (nullable nếu khách lẻ)
     @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "khach_hang_id")
-    private KhachHang customer;
+    private Customer customer;
 
     // đơn theo nhân viên bán
     @ManyToOne(fetch = FetchType.LAZY)

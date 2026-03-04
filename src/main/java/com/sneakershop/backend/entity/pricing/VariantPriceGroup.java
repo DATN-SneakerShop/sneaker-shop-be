@@ -1,5 +1,6 @@
 package com.sneakershop.backend.entity.pricing;
 
+import com.fasterxml.jackson.annotation.JsonIgnore;
 import com.sneakershop.backend.entity.product.ProductVariant;
 import lombok.Data;
 
@@ -15,9 +16,10 @@ public class VariantPriceGroup {
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
 
-    // Variant nào
+    // 🔥 FIX LỖI VÒNG LẶP: Thêm @JsonIgnore
     @ManyToOne
     @JoinColumn(name = "variant_id", nullable = false)
+    @JsonIgnore
     private ProductVariant variant;
 
     // VIP hoặc NORMAL
