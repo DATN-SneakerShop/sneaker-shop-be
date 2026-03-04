@@ -74,4 +74,4 @@ public class DataInitializer implements CommandLineRunner {
             System.out.println(">>> Created currency USD");
         }
     }
-    }
+}
