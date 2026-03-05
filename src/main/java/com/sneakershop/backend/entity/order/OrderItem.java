@@ -1,5 +1,6 @@
 package com.sneakershop.backend.entity.order;
 
+import com.fasterxml.jackson.annotation.JsonBackReference;
 import com.fasterxml.jackson.annotation.JsonIgnore;
 import com.sneakershop.backend.entity.product.ProductVariant;
 import lombok.Data;
@@ -30,12 +31,22 @@ public class OrderItem {
 
     @ManyToOne(fetch=FetchType.LAZY)
     @JoinColumn(name="order_id", nullable=false)
-    @JsonIgnore
+    @JsonBackReference
     private Order order;
 
     @ManyToOne(fetch=FetchType.LAZY)
     @JoinColumn(name="variant_id", nullable=false)
+    @JsonIgnore
     private ProductVariant variant;
+
+    /**
+     * Giúp FE lấy được variantId khi API đang trả entity trực tiếp,
+     * mà không cần serialize toàn bộ ProductVariant (tránh nặng JSON / lỗi lazy proxy).
+     */
+    @Transient
+    public Long getVariantId() {
+        return variant != null ? variant.getId() : null;
+    }
 
     // Snapshot để in hóa đơn/PDF không bị lệch khi đổi tên/SKU sau này
     @Column(name="sku_snapshot", length=80)

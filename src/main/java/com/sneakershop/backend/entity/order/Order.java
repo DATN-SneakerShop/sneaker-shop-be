@@ -1,6 +1,6 @@
 package com.sneakershop.backend.entity.order;
 
-import com.fasterxml.jackson.annotation.JsonIgnore;
+import com.fasterxml.jackson.annotation.JsonManagedReference;
 import com.sneakershop.backend.entity.customer.Customer;
 import com.sneakershop.backend.entity.login.User;
 import com.sneakershop.backend.entity.order.enums.*;
@@ -166,7 +166,7 @@ public class Order {
 
     // ===== Items =====
     @OneToMany(mappedBy = "order", cascade = CascadeType.ALL, orphanRemoval = true)
-    @JsonIgnore
+    @JsonManagedReference
     private List<OrderItem> items = new ArrayList<>();
 
     @PrePersist
