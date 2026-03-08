@@ -77,6 +77,7 @@ public interface ProductPriceRepository extends JpaRepository<ProductPrice, Long
       AND p.isDefault = true
 """)
     Optional<ProductPrice> findActivePrice(Long variantId);
+    Optional<ProductPrice> findFirstByVariantIdAndEndDateIsNull(Long variantId);
 
 
 }

@@ -1,6 +1,8 @@
 package com.sneakershop.backend.service.pricing;
+
 import com.sneakershop.backend.dto.pricing.GroupPriceDTO;
 import com.sneakershop.backend.dto.pricing.PriceGroupResponse;
+import com.sneakershop.backend.dto.promotion.PromotionDTO;
 import com.sneakershop.backend.entity.pricing.ProductPrice;
 import com.sneakershop.backend.entity.pricing.VariantPriceGroup;
 import com.sneakershop.backend.entity.product.ProductVariant;
@@ -24,15 +26,18 @@ public class VariantPriceGroupService {
     private final VariantPriceGroupRepository variantPriceGroupRepository;
     private final ProductVariantRepository productVariantRepository;
     private final ProductPriceRepository productPriceRepository;
-
+    private final PricingCalculationService pricingCalculationService;
     @Transactional
     public void savePriceGroup(Long variantId, String loaiKhach, BigDecimal price) {
 
         VariantPriceGroup priceGroup = variantPriceGroupRepository
-                .findByVariantIdAndLoaiKhach(variantId, loaiKhach)
+                .findByVariant_IdAndLoaiKhach(variantId, loaiKhach)
                 .orElseGet(() -> {
-                    ProductVariant variant = productVariantRepository.findById(variantId)
-                            .orElseThrow(() -> new RuntimeException("Variant not found"));
+
+                    ProductVariant variant =
+                            productVariantRepository.findById(variantId)
+                                    .orElseThrow(() ->
+                                            new RuntimeException("Variant not found"));
 
                     VariantPriceGroup newGroup = new VariantPriceGroup();
                     newGroup.setVariant(variant);
@@ -45,23 +50,24 @@ public class VariantPriceGroupService {
         variantPriceGroupRepository.save(priceGroup);
     }
 
+    /**
+     * Lấy giá theo nhóm khách
+     */
     public BigDecimal getPriceByCustomerType(Long variantId, String loaiKhach) {
 
-        // 1️⃣ Ưu tiên giá nhóm khách
         Optional<VariantPriceGroup> groupPrice =
                 variantPriceGroupRepository
-                        .findByVariantIdAndLoaiKhach(variantId, loaiKhach);
+                        .findByVariant_IdAndLoaiKhach(variantId, loaiKhach);
 
         if (groupPrice.isPresent()) {
             return groupPrice.get().getPrice();
         }
 
-        // 2️⃣ Fallback về giá default active
         return productPriceRepository
                 .findActivePrice(variantId)
                 .map(ProductPrice::getPrice)
                 .orElseThrow(() ->
-                        new RuntimeException("Không tìm thấy giá mặc định đang active"));
+                        new RuntimeException("Không tìm thấy giá mặc định"));
     }
 
     @Transactional
@@ -70,23 +76,31 @@ public class VariantPriceGroupService {
             String loaiKhach,
             BigDecimal newPrice) {
 
-        VariantPriceGroup existing = variantPriceGroupRepository
-                .findByVariantIdAndLoaiKhach(variantId, loaiKhach)
-                .orElseThrow(() ->
-                        new RuntimeException("Không tìm thấy bảng giá"));
+        VariantPriceGroup existing =
+                variantPriceGroupRepository
+                        .findByVariant_IdAndLoaiKhach(
+                                variantId,
+                                loaiKhach
+                        )
+                        .orElseThrow(() ->
+                                new RuntimeException("Không tìm thấy bảng giá"));
 
         existing.setPrice(newPrice);
 
         return variantPriceGroupRepository.save(existing);
     }
+
+    /**
+     * load bảng giá
+     */
     public List<PriceGroupResponse> getAll() {
 
-        List<ProductVariant> variants = productVariantRepository.findAll();
+        List<ProductVariant> variants =
+                productVariantRepository.findAll();
 
-        // load all group price 1 lần
-        List<VariantPriceGroup> allGroups = variantPriceGroupRepository.findAll();
+        List<VariantPriceGroup> allGroups =
+                variantPriceGroupRepository.findAll();
 
-        // group theo variantId
         Map<Long, List<VariantPriceGroup>> groupMap =
                 allGroups.stream()
                         .collect(Collectors.groupingBy(
@@ -95,30 +109,87 @@ public class VariantPriceGroupService {
 
         return variants.stream().map(variant -> {
 
-            BigDecimal basePrice = productPriceRepository
-                    .findActivePrice(variant.getId())
-                    .map(ProductPrice::getPrice)
-                    .orElse(null);
+            BigDecimal basePrice =
+                    productPriceRepository
+                            .findActivePrice(variant.getId())
+                            .map(ProductPrice::getPrice)
+                            .orElse(null);
 
-            List<GroupPriceDTO> groups =
-                    groupMap.getOrDefault(variant.getId(), List.of())
-                            .stream()
-                            .map(g -> new GroupPriceDTO(
-                                    g.getLoaiKhach(),
-                                    g.getPrice()))
-                            .toList();
+            List<String> customerTypes = List.of("VIP", "THUONG");
+
+            List<GroupPriceDTO> groups = customerTypes.stream()
+                    .map(type -> {
+
+                        VariantPriceGroup group =
+                                groupMap.getOrDefault(variant.getId(), List.of())
+                                        .stream()
+                                        .filter(g -> g.getLoaiKhach().equalsIgnoreCase(type))
+                                        .findFirst()
+                                        .orElse(null);
+
+                        BigDecimal price =
+                                group != null
+                                        ? group.getPrice()
+                                        : basePrice;
+
+                        BigDecimal finalPrice =
+                                pricingCalculationService.calculateFinalPrice(
+                                        variant.getId(),
+                                        type
+                                );
+
+                        return new GroupPriceDTO(
+                                type,
+                                price,
+                                finalPrice,
+                                null,
+                                null
+                        );
+
+                    })
+                    .toList();
+
+            List<PromotionDTO> promotions = variant.getPromotions()
+                    .stream()
+                    .map(p -> {
+                        PromotionDTO dto = new PromotionDTO();
+
+                        dto.setId(p.getId());
+                        dto.setName(p.getName());
+                        dto.setCode(p.getCode());
+                        dto.setDiscountType(p.getDiscountType());
+                        dto.setDiscountValue(p.getDiscountValue());
+                        dto.setPriority(p.getPriority());
+                        dto.setStartTime(p.getStartTime());
+                        dto.setEndTime(p.getEndTime());
+                        dto.setActive(p.getActive());
+
+                        return dto;
+                    })
+                    .toList();
+
 
             return new PriceGroupResponse(
                     variant.getId(),
                     variant.getProduct().getName(),
+                    variant.getProduct().getSku(),
                     variant.getSku(),
                     variant.getColorway(),
                     variant.getSize(),
+                    variant.getProduct().getThumbnail(),
+
+                    variant.getProduct().getBrand(),
+                    variant.getProduct().getGender(),
+                    variant.getProduct().getMaterial(),
+                    variant.getProduct().getModel(),
+                    variant.getProduct().getReleaseYear(),
+                    variant.getProduct().getDescription(),
+
                     basePrice,
-                    groups
+                    groups,
+                    promotions
             );
-
         }).toList();
-    }
 
+    }
 }

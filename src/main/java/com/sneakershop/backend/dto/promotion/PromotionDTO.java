@@ -4,7 +4,9 @@ import com.sneakershop.backend.entity.pricing.ProductPrice;
 import com.sneakershop.backend.entity.product.ProductVariant;
 import com.sneakershop.backend.entity.promotion.DiscountType;
 import com.sneakershop.backend.entity.promotion.Promotion;
+import lombok.AllArgsConstructor;
 import lombok.Data;
+import lombok.NoArgsConstructor;
 
 import java.math.BigDecimal;
 import java.time.LocalDateTime;
@@ -12,6 +14,8 @@ import java.util.Comparator;
 import java.util.List;
 
 @Data
+@AllArgsConstructor
+@NoArgsConstructor
 public class PromotionDTO {
 
     private Long id;

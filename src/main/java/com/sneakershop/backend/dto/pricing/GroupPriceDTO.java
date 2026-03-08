@@ -10,5 +10,9 @@ import java.math.BigDecimal;
 public class GroupPriceDTO {
     private String loaiKhach;
     private BigDecimal price;
+    private BigDecimal finalPrice;
+    private Integer discountPercent;
+
+    private String promotionName;
 
 }

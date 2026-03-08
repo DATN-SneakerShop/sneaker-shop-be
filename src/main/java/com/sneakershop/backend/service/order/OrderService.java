@@ -9,6 +9,7 @@ import com.sneakershop.backend.entity.order.enums.OrderStatus;
 import com.sneakershop.backend.entity.order.enums.ReturnStatus;
 import com.sneakershop.backend.entity.product.ProductVariant;
 import com.sneakershop.backend.repository.order.OrderRepository;
+import com.sneakershop.backend.service.pricing.PricingCalculationService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -30,6 +31,7 @@ public class OrderService {
 
     private final OrderRepository orderRepo;
     private final EntityManager em;
+    private final PricingCalculationService pricingCalculationService;
 
 private Order getOrderOr404(Long id) {
     return orderRepo.findByIdAndDeletedFalse(id)
@@ -84,6 +86,17 @@ private void assertReturnable(Order order) {
         order.setOrderCode(generateOrderCode());
         order.setChannel(req.getChannel());
         order.setPaymentMethod(req.getPaymentMethod());
+        // ===== LẤY LOẠI KHÁCH =====
+        String customerType = "THUONG";
+
+        if (req.getCustomerId() != null) {
+
+            Customer customer = em.find(Customer.class, req.getCustomerId());
+
+            if (customer != null && customer.getLoaiKhach() != null) {
+                customerType = customer.getLoaiKhach();
+            }
+        }
         order.setNote(req.getNote());
 
         if (req.getShippingFee() != null) order.setShippingFee(nz(req.getShippingFee()));
@@ -98,13 +111,25 @@ private void assertReturnable(Order order) {
 
         List<OrderItem> items = new ArrayList<>();
         for (OrderItemCreateRequest ir : req.getItems()) {
+
             OrderItem it = new OrderItem();
+
             it.setOrder(order);
             it.setVariant(em.getReference(ProductVariant.class, ir.getVariantId()));
             it.setQuantity(ir.getQuantity());
 
-            if (ir.getUnitPrice() != null) it.setUnitPrice(nz(ir.getUnitPrice()));
-            if (ir.getLineDiscountAmount() != null) it.setLineDiscountAmount(nz(ir.getLineDiscountAmount()));
+            // ===== TÍNH GIÁ THEO KHÁCH + PROMOTION =====
+            BigDecimal finalPrice =
+                    pricingCalculationService.calculateFinalPrice(
+                            ir.getVariantId(),
+                            customerType
+                    );
+
+            it.setUnitPrice(finalPrice);
+
+            if (ir.getLineDiscountAmount() != null)
+                it.setLineDiscountAmount(nz(ir.getLineDiscountAmount()));
+
             it.setSkuSnapshot(ir.getSkuSnapshot());
             it.setProductNameSnapshot(ir.getProductNameSnapshot());
 
@@ -230,29 +255,51 @@ private void assertReturnable(Order order) {
 
     @Transactional
     public OrderDetailDTO addItems(Long orderId, List<OrderItemCreateRequest> itemsReq) {
+
         Order order = getOrderOr404(orderId);
         assertEditable(order);
 
+        String customerType = "THUONG";
+
+        if (order.getCustomer() != null && order.getCustomer().getLoaiKhach() != null) {
+            customerType = order.getCustomer().getLoaiKhach();
+        }
+
         for (OrderItemCreateRequest ir : itemsReq) {
+
             OrderItem it = new OrderItem();
+
             it.setOrder(order);
             it.setVariant(em.getReference(ProductVariant.class, ir.getVariantId()));
             it.setQuantity(ir.getQuantity());
-            if (ir.getUnitPrice() != null) it.setUnitPrice(nz(ir.getUnitPrice()));
-            if (ir.getLineDiscountAmount() != null) it.setLineDiscountAmount(nz(ir.getLineDiscountAmount()));
+
+            BigDecimal finalPrice =
+                    pricingCalculationService.calculateFinalPrice(
+                            ir.getVariantId(),
+                            customerType
+                    );
+
+            it.setUnitPrice(finalPrice);
+
+            if (ir.getLineDiscountAmount() != null)
+                it.setLineDiscountAmount(nz(ir.getLineDiscountAmount()));
+
             it.setSkuSnapshot(ir.getSkuSnapshot());
             it.setProductNameSnapshot(ir.getProductNameSnapshot());
 
             calcLine(it);
+
             order.getItems().add(it);
         }
 
         recalcOrderTotals(order);
+
         return toDetailDTO(orderRepo.save(order));
     }
 
     @Transactional
     public OrderDetailDTO updateItemQty(Long orderId, Long itemId, UpdateItemQuantityRequest req) {
+
         Order order = getOrderOr404(orderId);
         assertEditable(order);
 
@@ -264,7 +311,24 @@ private void assertReturnable(Order order) {
                         "Order item not found: " + itemId
                 ));
 
+        // ===== LẤY LOẠI KHÁCH =====
+        String customerType = "THUONG";
+
+        if (order.getCustomer() != null && order.getCustomer().getLoaiKhach() != null) {
+            customerType = order.getCustomer().getLoaiKhach();
+        }
+
+        // ===== TÍNH GIÁ THEO PROMOTION =====
+        BigDecimal finalPrice =
+                pricingCalculationService.calculateFinalPrice(
+                        item.getVariantId(),
+                        customerType
+                );
+
+        item.setUnitPrice(finalPrice);
+
         item.setQuantity(req.getQuantity());
+
         calcLine(item);
         recalcOrderTotals(order);
 

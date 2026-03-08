@@ -58,8 +58,9 @@ public class SecurityConfig {
                 .antMatchers("/api/admin/promotions/**").hasAuthority("ADMIN")
                 .antMatchers("/api/admin/products/**").permitAll()
                 .antMatchers(HttpMethod.GET, "/api/pricing/**").permitAll()
-
-
+                .antMatchers(HttpMethod.POST, "/api/price-campaign/**").permitAll()
+                .antMatchers(HttpMethod.GET, "/api/price-campaign/**").permitAll()
+                .antMatchers(HttpMethod.PUT, "/api/price-campaign/**").permitAll()
 
                 // QUAN TRỌNG: Cấu hình quyền cho Logs và Users
                 .antMatchers("/api/management/logs/**").hasAuthority("ADMIN")
