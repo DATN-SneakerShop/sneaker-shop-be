@@ -1,6 +1,8 @@
 package com.sneakershop.backend.entity.product;
 
+import com.fasterxml.jackson.annotation.JsonBackReference;
 import com.fasterxml.jackson.annotation.JsonIgnore;
+import com.fasterxml.jackson.annotation.JsonManagedReference;
 import com.sneakershop.backend.entity.promotion.Promotion;
 // 🔥 Import thêm 2 entity bảng giá
 import com.sneakershop.backend.entity.pricing.ProductPrice;
@@ -54,6 +56,7 @@ public class ProductVariant {
 
     @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "product_id", nullable = false)
+    @JsonBackReference
     private Product product;
 
     @ManyToMany(mappedBy = "variants")

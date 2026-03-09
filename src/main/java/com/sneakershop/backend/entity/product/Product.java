@@ -62,6 +62,7 @@ public class Product {
             cascade = CascadeType.ALL,
             orphanRemoval = true
     )
+    @JsonManagedReference
     private List<ProductVariant> variants;
 
     /* ================== IMAGES ================== */

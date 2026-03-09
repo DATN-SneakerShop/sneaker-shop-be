@@ -3,6 +3,7 @@ package com.sneakershop.backend.controller.promotion;
 import com.sneakershop.backend.dto.product.ProductSimpleResponse;
 import com.sneakershop.backend.dto.product.VariantResponse;
 import com.sneakershop.backend.service.product.ProductService;
+import com.sneakershop.backend.service.promotion.PromotionService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.web.bind.annotation.*;
 import java.util.List;
@@ -13,6 +14,7 @@ import java.util.List;
 public class AdminProductController {
 
     private final ProductService productService;
+    private final PromotionService promotionService;
 
     @GetMapping
     public List<ProductSimpleResponse> getAll(
@@ -23,6 +25,10 @@ public class AdminProductController {
         }
         // ✅ Đã khớp với ProductService mới
         return productService.getAll();
+    }
+    @GetMapping("/check-name")
+    public boolean checkName(@RequestParam String name) {
+        return promotionService.checkName(name);
     }
 
     @GetMapping("/{id}/variants")

@@ -1,7 +1,12 @@
 package com.sneakershop.backend.service.pricing;
 
 import com.sneakershop.backend.dto.pricing.PriceGroupResponse;
+import com.sneakershop.backend.entity.pricing.ProductPrice;
+import com.sneakershop.backend.entity.pricing.VariantPriceGroup;
 import com.sneakershop.backend.entity.promotion.Promotion;
+import com.sneakershop.backend.repository.pricing.PriceCampaignItemRepository;
+import com.sneakershop.backend.repository.pricing.ProductPriceRepository;
+import com.sneakershop.backend.repository.pricing.VariantPriceGroupRepository;
 import com.sneakershop.backend.repository.promotion.PromotionRepository;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
@@ -18,20 +23,32 @@ import java.util.Map;
 @RequiredArgsConstructor
 public class PricingCalculationService {
 
-    private final VariantPriceGroupService variantPriceGroupService;
+    private final VariantPriceGroupRepository variantPriceGroupRepository;
+    private final ProductPriceRepository productPriceRepository;
     private final PromotionRepository promotionRepository;
+    private final PriceCampaignItemRepository campaignItemRepository;
 
+    /**
+     * Tính giá cuối cùng
+     */
     public BigDecimal calculateFinalPrice(Long variantId, String loaiKhach) {
 
-        // 1️⃣ Lấy giá theo nhóm khách (hoặc default)
-        BigDecimal basePrice =
-                variantPriceGroupService.getPriceByCustomerType(variantId, loaiKhach);
+        // 1️⃣ Lấy giá group nếu có
+        BigDecimal basePrice = variantPriceGroupRepository
+                .findByVariant_IdAndLoaiKhach(variantId, loaiKhach)
+                .map(VariantPriceGroup::getPrice)
+                .orElseGet(() ->
+                        productPriceRepository
+                                .findActivePrice(variantId)
+                                .map(ProductPrice::getPrice)
+                                .orElse(BigDecimal.ZERO)
+                );
 
         if (basePrice == null) {
             return BigDecimal.ZERO;
         }
 
-        // 2️⃣ Lấy promotion đang active theo thời gian + variant
+        // 2️⃣ Lấy promotion active
         LocalDateTime now = LocalDateTime.now();
 
         List<Promotion> promotions =
@@ -44,7 +61,7 @@ public class PricingCalculationService {
             return basePrice;
         }
 
-        // 3️⃣ Lọc promotion theo nhóm khách
+        // 3️⃣ Chọn promotion tốt nhất
         Promotion bestPromotion = promotions.stream()
                 .filter(p -> {
                     String group = p.getCustomerGroup();
@@ -72,18 +89,23 @@ public class PricingCalculationService {
         }
 
         // 4️⃣ Tính tiền giảm
-        BigDecimal discountAmount = calculateDiscountAmount(basePrice, bestPromotion);
+        BigDecimal discountAmount =
+                calculateDiscountAmount(basePrice, bestPromotion);
 
-        // 5️⃣ Giá cuối cùng (không cho âm)
+        // 5️⃣ Giá cuối
         BigDecimal finalPrice = basePrice.subtract(discountAmount);
 
-        return finalPrice.max(BigDecimal.ZERO)
+        return finalPrice
+                .max(BigDecimal.ZERO)
                 .setScale(0, RoundingMode.HALF_UP);
     }
+
     /**
-     * Tính số tiền được giảm (không phải %)
+     * Tính tiền giảm
      */
-    private BigDecimal calculateDiscountAmount(BigDecimal basePrice, Promotion promotion) {
+    private BigDecimal calculateDiscountAmount(
+            BigDecimal basePrice,
+            Promotion promotion) {
 
         BigDecimal discount;
 
@@ -94,26 +116,50 @@ public class PricingCalculationService {
                     .divide(BigDecimal.valueOf(100), 0, RoundingMode.HALF_UP);
 
         } else {
+
             discount = promotion.getDiscountValue();
+
         }
+
         return discount.min(basePrice);
     }
+
+    /**
+     * Bảng giá final cho toàn bộ variant
+     */
     public Map<Long, BigDecimal> calculateFinalPriceBoard(String loaiKhach) {
 
         Map<Long, BigDecimal> result = new HashMap<>();
 
-        List<PriceGroupResponse> variants =
-                variantPriceGroupService.getAll();
+        List<ProductPrice> prices = productPriceRepository.findAll();
 
-        for (PriceGroupResponse variant : variants) {
+        for (ProductPrice price : prices) {
+
+            Long variantId = price.getVariant().getId();
 
             BigDecimal finalPrice =
-                    calculateFinalPrice(variant.getVariantId(), loaiKhach);
+                    calculateFinalPrice(variantId, loaiKhach);
 
-            result.put(variant.getVariantId(), finalPrice);
+            result.put(variantId, finalPrice);
         }
 
         return result;
     }
+    public BigDecimal getCampaignPrice(Long variantId) {
 
+        LocalDateTime now = LocalDateTime.now();
+
+        return campaignItemRepository.findAll()
+                .stream()
+                .filter(i ->
+                        i.getVariant().getId().equals(variantId)
+                                && i.getCampaign().getActive()
+                                && now.isAfter(i.getCampaign().getStartTime())
+                                && now.isBefore(i.getCampaign().getEndTime())
+                )
+                .map(i -> i.getPrice())
+                .min(BigDecimal::compareTo)
+
+                .orElse(null);
+    }
 }

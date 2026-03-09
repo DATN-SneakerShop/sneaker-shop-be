@@ -82,4 +82,5 @@ public class VariantPriceGroupController {
                 pricingCalculationService.calculateFinalPriceBoard(loaiKhach)
         );
     }
+
 }
