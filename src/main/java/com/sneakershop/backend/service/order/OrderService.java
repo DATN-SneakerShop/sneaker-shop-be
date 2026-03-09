@@ -1,5 +1,7 @@
 package com.sneakershop.backend.service.order;
 
+import com.sneakershop.backend.dto.customer.CustomerSpendingDTO;
+import com.sneakershop.backend.dto.customer.InactiveCustomerDTO;
 import com.sneakershop.backend.dto.order.*;
 import com.sneakershop.backend.entity.customer.Customer;
 import com.sneakershop.backend.entity.login.User;
@@ -8,6 +10,7 @@ import com.sneakershop.backend.entity.order.OrderItem;
 import com.sneakershop.backend.entity.order.enums.OrderStatus;
 import com.sneakershop.backend.entity.order.enums.ReturnStatus;
 import com.sneakershop.backend.entity.product.ProductVariant;
+import com.sneakershop.backend.repository.customer.CustomerRepository;
 import com.sneakershop.backend.repository.order.OrderRepository;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
@@ -21,6 +24,7 @@ import java.math.BigDecimal;
 import java.math.RoundingMode;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
+import java.time.temporal.ChronoUnit;
 import java.util.*;
 import java.util.stream.Collectors;
 
@@ -30,6 +34,7 @@ public class OrderService {
 
     private final OrderRepository orderRepo;
     private final EntityManager em;
+    private final CustomerRepository customerRepo;
 
 private Order getOrderOr404(Long id) {
     return orderRepo.findByIdAndDeletedFalse(id)
@@ -214,6 +219,8 @@ private void assertReturnable(Order order) {
         }
         if (next == OrderStatus.COMPLETED) {
             order.setCompletedAt(LocalDateTime.now());
+            // cộng điểm cho khách
+            congDiemChoKhach(order);
         }
 
         recalcOrderTotals(order);
@@ -336,7 +343,12 @@ if (req.getReturnedAmountOverride() != null) {
 
         recalcOrderTotals(order);
 
-        return toDetailDTO(orderRepo.save(order));
+        Order saved = orderRepo.save(order);
+
+        // Trừ điểm khi hoàn trả
+        truDiemKhiHoanTra(saved);
+
+        return toDetailDTO(saved);
     }
 
     // Checklist: hiển thị báo cáo đơn hàng hoàn trả
@@ -376,6 +388,27 @@ if (req.getReturnedAmountOverride() != null) {
             }
         }
         order.setSubtotalAmount(subtotal);
+
+        // ưu đãi cho khách
+        Customer customer = order.getCustomer();
+
+        if (customer != null) {
+
+            int giamTheoDiem = customer.getUuDaiTheoDiem() == null ? 0 : customer.getUuDaiTheoDiem();
+            int giamTheoNhom = customer.getUuDaiTheoNhom() == null ? 0 : customer.getUuDaiTheoNhom();
+
+            // 🔥 chỉ chọn ưu đãi lớn nhất
+            int discountPercent = Math.max(giamTheoDiem, giamTheoNhom);
+
+            if (discountPercent > 0) {
+
+                BigDecimal discount = subtotal
+                        .multiply(BigDecimal.valueOf(discountPercent))
+                        .divide(BigDecimal.valueOf(100));
+
+                order.setDiscountAmount(discount);
+            }
+        }
 
         BigDecimal discount = nz(order.getDiscountAmount());
         BigDecimal shipping = nz(order.getShippingFee());
@@ -469,5 +502,91 @@ if (req.getReturnedAmountOverride() != null) {
             return nz(o.getFinalAmount());
         }
         return BigDecimal.ZERO;
+    }
+
+    public List<CustomerSpendingDTO> getCustomerSpending(){
+
+        List<Object[]> data = orderRepo.getCustomerSpending();
+        return data.stream()
+                .map(o -> new CustomerSpendingDTO(
+                        (Long)o[0],
+                        (String)o[1],
+                        (BigDecimal)o[2]
+                ))
+                .toList();
+    }
+
+    public List<CustomerSpendingDTO> getTopCustomers(){
+
+        return getCustomerSpending()
+                .stream()
+                .limit(10)
+                .toList();
+    }
+
+    //
+    public List<InactiveCustomerDTO> getInactiveCustomers() {
+
+        List<Object[]> data = orderRepo.getLastOrderTime();
+
+        return data.stream()
+                .map(r -> {
+
+                    Long id = (Long) r[0];
+                    String name = (String) r[1];
+                    LocalDateTime lastOrder = (LocalDateTime) r[2];
+
+                    long days = ChronoUnit.DAYS.between(lastOrder, LocalDateTime.now());
+
+                    return new InactiveCustomerDTO(id, name, days);
+
+                })
+                .filter(c -> c.getDaysSinceLastOrder() > 30)
+                .toList();
+    }
+
+    //Cộng điểm khi mua hàng
+    @Transactional
+    public void congDiemChoKhach(Order order) {
+
+        Customer customer = order.getCustomer();
+
+        if (customer != null && order.getFinalAmount() != null) {
+
+            int diemCong = order.getFinalAmount()
+                    .divide(BigDecimal.valueOf(10000))
+                    .intValue();
+
+            customer.setDiemTichLuy(
+                    customer.getDiemTichLuy() + diemCong
+            );
+
+            customerRepo.save(customer);
+        }
+    }
+
+    @Transactional
+    public void truDiemKhiHoanTra(Order order) {
+
+        Customer customer = order.getCustomer();
+        if (customer == null) return;
+
+        BigDecimal returned = order.getReturnedAmount();
+        if (returned == null || returned.compareTo(BigDecimal.ZERO) <= 0) return;
+
+        int diemTru = returned
+                .divide(BigDecimal.valueOf(10000), RoundingMode.DOWN)
+                .intValue();
+
+        int diemHienTai = customer.getDiemTichLuy() == null ? 0 : customer.getDiemTichLuy();
+
+        int diemMoi = diemHienTai - diemTru;
+        if (diemMoi < 0) diemMoi = 0;
+
+        customer.setDiemTichLuy(diemMoi);
+
+        customerRepo.save(customer);
+
+        System.out.println("Trừ điểm khách: -" + diemTru);
     }
 }

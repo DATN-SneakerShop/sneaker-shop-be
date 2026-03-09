@@ -1,5 +1,7 @@
 package com.sneakershop.backend.controller.order;
 
+import com.sneakershop.backend.dto.customer.CustomerSpendingDTO;
+import com.sneakershop.backend.dto.customer.InactiveCustomerDTO;
 import com.sneakershop.backend.dto.order.*;
 import com.sneakershop.backend.entity.order.enums.OrderStatus;
 import com.sneakershop.backend.entity.order.enums.ReturnStatus;
@@ -134,5 +136,22 @@ public class OrderController {
             .append("</body></html>");
 
         return ResponseEntity.ok(html.toString());
+    }
+
+    //
+    @GetMapping("/customer-spending")
+    public ResponseEntity<List<CustomerSpendingDTO>> customerSpending(){
+        return ResponseEntity.ok(orderService.getCustomerSpending());
+    }
+
+    //
+    @GetMapping("/top-customers")
+    public ResponseEntity<List<CustomerSpendingDTO>> topCustomers(){
+        return ResponseEntity.ok(orderService.getTopCustomers());
+    }
+
+    @GetMapping("/inactive-customers")
+    public List<InactiveCustomerDTO> getInactiveCustomers() {
+        return orderService.getInactiveCustomers();
     }
 }
