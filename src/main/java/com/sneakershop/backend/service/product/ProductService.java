@@ -5,13 +5,16 @@ import com.sneakershop.backend.entity.product.*;
 import com.sneakershop.backend.entity.pricing.ProductPrice;
 import com.sneakershop.backend.repository.pricing.ProductPriceRepository;
 import com.sneakershop.backend.repository.product.*;
+import com.sneakershop.backend.repository.promotion.PromotionRepository;
 import lombok.RequiredArgsConstructor;
 import org.springframework.data.domain.*;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import javax.persistence.EntityNotFoundException;
 import java.math.BigDecimal;
+import java.time.LocalDate;
 import java.time.LocalDateTime;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.stream.Collectors;
@@ -24,6 +27,9 @@ public class ProductService {
     private final ProductVariantRepository productVariantRepository;
     private final CategoryRepository categoryRepository;
     private final ProductPriceRepository productPriceRepository;
+    private final PromotionRepository promotionRepository;
+    private final ProductTagRepository productTagRepository;
+    private final ProductHistoryRepository productHistoryRepository;
 
     private static final Map<String, String> STATUS_LABEL = Map.of(
             "Còn hàng", "Còn hàng",
@@ -81,6 +87,7 @@ public class ProductService {
             return v;
         }).collect(Collectors.toList());
         product.setVariants(variants);
+        updateProductStatus(product);
 
         return toListResponse(productRepository.save(product));
     }
@@ -89,14 +96,27 @@ public class ProductService {
         Pageable pageable = PageRequest.of(page, size);
         return productRepository.searchProducts(categoryIds, keyword, (long) categoryIds.size(), pageable).map(this::toListResponse);
     }
-
+    public Page<ProductResponse> getBestSellingProducts(Pageable pageable) {
+        return productRepository
+                .findBestSellingProducts(pageable)
+                .map(this::toListResponse);
+    }
     public Page<ProductResponse> getProducts(Pageable pageable) {
-        return productRepository.findAll(pageable).map(this::toListResponse);
+        return productRepository.findProductsInStock(pageable)
+                .map(this::toListResponse);
     }
 
     public Page<ProductResponse> searchAdvanced(ProductSearchRequest request, Pageable pageable) {
-        return productRepository.findAll(ProductSpecification.build(request), pageable).map(this::toListResponse);
-    }
+        return productRepository.findAll(
+                ProductSpecification.build(request)
+                        .and((root, query, cb) -> {
+                            query.distinct(true);
+                            return cb.greaterThan(
+                                    root.join("variants").get("stock"), 0
+                            );
+                        }),
+                pageable
+        ).map(this::toListResponse);    }
 
     @Transactional(readOnly = true)
     public ProductDetailResponse getById(Long id) {
@@ -106,7 +126,17 @@ public class ProductService {
 
     @Transactional
     public ProductResponse update(Long id, ProductRequest request) {
-        Product p = productRepository.findById(id).orElseThrow(() -> new EntityNotFoundException("Product not found"));
+
+        Product p = productRepository.findById(id)
+                .orElseThrow(() -> new EntityNotFoundException("Product not found"));
+
+        // lưu lịch sử trước khi update
+        saveHistory(id, "name", p.getName(), request.getName());
+        saveHistory(id, "brand", p.getBrand(), request.getBrand());
+        saveHistory(id, "status", p.getStatus(), request.getStatus());
+        saveHistory(id, "model", p.getModel(), request.getModel());
+        saveHistory(id, "releaseYear", p.getReleaseYear(), request.getReleaseYear());
+
         p.setName(request.getName());
         p.setBrand(request.getBrand());
         p.setThumbnail(request.getThumbnail());
@@ -124,8 +154,15 @@ public class ProductService {
         return toListResponse(productRepository.save(p));
     }
 
+    @Transactional
     public void delete(Long id) {
-        productRepository.deleteById(id);
+
+        Product product = productRepository.findById(id)
+                .orElseThrow(() -> new RuntimeException("Product not found"));
+
+        product.setDeleted(true);
+
+        productRepository.save(product);
     }
 
     public List<ProductSimpleResponse> getAll() {
@@ -161,12 +198,39 @@ public class ProductService {
     }
 
     private ProductResponse toListResponse(Product p) {
+
         ProductResponse res = new ProductResponse();
         res.setId(p.getId());
         res.setName(p.getName());
         res.setSku(p.getSku());
+        res.setBrand(p.getBrand());
         res.setStatus(STATUS_LABEL.getOrDefault(p.getStatus(), p.getStatus()));
         res.setThumbnail(p.getThumbnail());
+        boolean isNew = p.getCreatedAt() != null &&
+                p.getCreatedAt().isAfter(LocalDateTime.now().minusDays(7));
+
+        res.setIsNew(isNew);
+        // HOT (bán > 50 sản phẩm)
+        Long sold = productRepository.countSoldByProduct(p.getId());
+        boolean isHot = sold != null && sold >= 50;
+        res.setIsHot(isHot);
+        boolean hasPromotion = productRepository.hasActivePromotion(
+                p.getId(),
+                LocalDateTime.now()
+        );
+
+        if (hasPromotion) {
+            res.setDiscountedPrice(BigDecimal.ONE); // chỉ để FE nhận biết có SALE
+        }
+        // ⭐ TAGS
+        if (p.getTags() != null) {
+            res.setTags(
+                    p.getTags()
+                            .stream()
+                            .map(ProductTag::getName)
+                            .collect(Collectors.toList())
+            );
+        }
         return res;
     }
 
@@ -223,5 +287,179 @@ public class ProductService {
         }
 
         return res;
+    }
+    private void updateProductStatus(Product product) {
+
+        boolean hasStock = product.getVariants()
+                .stream()
+                .anyMatch(v -> v.getStock() > 0);
+
+        product.setStatus(hasStock ? "Còn hàng" : "Hết hàng");
+    }
+    public Page<Product> getProductsByPromotion(Long promotionId, Pageable pageable) {
+        return productRepository.findProductsByPromotion(promotionId, pageable);
+    }
+    @Transactional
+    public void addTagToProduct(Long productId, Long tagId) {
+
+        Product product = productRepository.findById(productId)
+                .orElseThrow(() -> new RuntimeException("Product not found"));
+
+        ProductTag tag = productTagRepository.findById(tagId)
+                .orElseThrow(() -> new RuntimeException("Tag not found"));
+
+        if (product.getTags() == null) {
+            product.setTags(new ArrayList<>());
+        }
+
+        product.getTags().add(tag);
+
+        productRepository.save(product);
+    }
+    @Transactional
+    public void updateProductTags(Long productId, List<Long> tagIds) {
+
+        Product product = productRepository.findById(productId)
+                .orElseThrow(() -> new RuntimeException("Product not found"));
+
+        List<ProductTag> tags = productTagRepository.findAllById(tagIds);
+
+        product.setTags(tags);
+
+        productRepository.save(product);
+    }
+    @Transactional
+    public void removeTagFromProduct(Long productId, Long tagId) {
+
+        Product product = productRepository.findById(productId)
+                .orElseThrow(() -> new RuntimeException("Product not found"));
+
+        product.getTags().removeIf(tag -> tag.getId().equals(tagId));
+
+        productRepository.save(product);
+    }
+    public Page<ProductResponse> getProductsByTag(String tagName, Pageable pageable) {
+
+        Page<Product> products = productRepository.findProductsInStock(pageable);
+
+        List<ProductResponse> filtered = products
+                .stream()
+                .map(this::toListResponse)
+                .filter(p -> {
+
+                    if ("NEW".equalsIgnoreCase(tagName)) {
+                        return Boolean.TRUE.equals(p.getIsNew());
+                    }
+
+                    if ("HOT".equalsIgnoreCase(tagName)) {
+                        return Boolean.TRUE.equals(p.getIsHot());
+                    }
+
+                    if ("SALE".equalsIgnoreCase(tagName)) {
+                        return p.getDiscountedPrice() != null;
+                    }
+
+                    return false;
+                })
+                .toList();
+
+        return new PageImpl<>(filtered, pageable, filtered.size());
+    }
+    public Page<ProductResponse> getProductsByCreatedDate(
+            LocalDate date,
+            Pageable pageable
+    ) {
+
+        LocalDateTime start = date.atStartOfDay();
+        LocalDateTime end = date.plusDays(1).atStartOfDay();
+
+        return productRepository
+                .findProductsByCreatedDate(start, end, pageable)
+                .map(this::toListResponse);
+    }
+    public Page<ProductResponse> filterProductsByDate(
+            LocalDate startDate,
+            LocalDate endDate,
+            Pageable pageable
+    ) {
+
+        LocalDateTime start = startDate.atStartOfDay();
+        LocalDateTime end = endDate.plusDays(1).atStartOfDay();
+
+        return productRepository
+                .findProductsByDateRange(start, end, pageable)
+                .map(this::toListResponse);
+    }
+    @Transactional
+    public ProductResponse updateStatus(Long productId, String status) {
+
+        Product product = productRepository.findById(productId)
+                .orElseThrow(() -> new RuntimeException("Product not found"));
+
+        product.setStatus(status);
+
+        productRepository.save(product);
+
+        return toListResponse(product);
+    }
+    @Transactional
+    public void batchUpdateStatus(List<Long> ids, String status) {
+
+        List<Product> products = productRepository.findAllById(ids);
+
+        for (Product product : products) {
+            product.setStatus(status);
+        }
+
+        productRepository.saveAll(products);
+    }
+    public Page<Product> getUpdatedProducts(int page, int size) {
+
+        Pageable pageable = PageRequest.of(page, size);
+
+        return productRepository.findAllByOrderByUpdatedAtDesc(pageable);
+
+    }
+    @Transactional
+    public void batchDelete(List<Long> ids) {
+
+        List<Product> products = productRepository.findAllById(ids);
+
+        for (Product product : products) {
+            product.setDeleted(true);
+        }
+
+        productRepository.saveAll(products);
+    }
+    private void saveHistory(Long productId, String field, Object oldValue, Object newValue) {
+
+        if (oldValue == null && newValue == null) return;
+
+        if (oldValue != null && oldValue.equals(newValue)) return;
+
+        ProductHistory history = new ProductHistory();
+
+        history.setProductId(productId);
+        history.setFieldName(field);
+        history.setOldValue(oldValue != null ? oldValue.toString() : null);
+        history.setNewValue(newValue != null ? newValue.toString() : null);
+        history.setUpdatedAt(LocalDateTime.now());
+
+        productHistoryRepository.save(history);
+    }
+    public List<ProductHistoryResponse> getProductHistory(Long productId) {
+
+        return productHistoryRepository
+                .findByProductIdOrderByUpdatedAtDesc(productId)
+                .stream()
+                .map(h -> {
+                    ProductHistoryResponse res = new ProductHistoryResponse();
+                    res.setFieldName(h.getFieldName());
+                    res.setOldValue(h.getOldValue());
+                    res.setNewValue(h.getNewValue());
+                    res.setUpdatedAt(h.getUpdatedAt());
+                    return res;
+                })
+                .toList();
     }
 }

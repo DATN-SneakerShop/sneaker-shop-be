@@ -18,7 +18,9 @@ public class ProductResponse {
     private String releaseType;
 
     private String thumbnail;        // URL ảnh
-
+    private Boolean isNew;
+    private Boolean isHot;
+    private BigDecimal discountedPrice;
     private BigDecimal priceFrom;    // giá thấp nhất (optional, FE dùng list)
 
     // ✅ NHIỀU CATEGORY
@@ -26,4 +28,5 @@ public class ProductResponse {
     private List<String> categoryNames;
     private List<ProductImageResponse> images;
     private List<ProductVariantResponse> variants;
+    private List<String> tags;
 }
