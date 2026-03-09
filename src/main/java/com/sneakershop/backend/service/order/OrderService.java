@@ -504,6 +504,7 @@ if (req.getReturnedAmountOverride() != null) {
         return BigDecimal.ZERO;
     }
 
+    // Doanh thu khách
     public List<CustomerSpendingDTO> getCustomerSpending(){
 
         List<Object[]> data = orderRepo.getCustomerSpending();
@@ -516,6 +517,7 @@ if (req.getReturnedAmountOverride() != null) {
                 .toList();
     }
 
+    // Top khách hàng
     public List<CustomerSpendingDTO> getTopCustomers(){
 
         return getCustomerSpending()
@@ -524,7 +526,7 @@ if (req.getReturnedAmountOverride() != null) {
                 .toList();
     }
 
-    //
+    // Khách hàng lâu không hoạt động
     public List<InactiveCustomerDTO> getInactiveCustomers() {
 
         List<Object[]> data = orderRepo.getLastOrderTime();
@@ -565,6 +567,7 @@ if (req.getReturnedAmountOverride() != null) {
         }
     }
 
+    // Trừ điểm khi hoàn trả ( đang fix)
     @Transactional
     public void truDiemKhiHoanTra(Order order) {
 
