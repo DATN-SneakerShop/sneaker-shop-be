@@ -1,5 +1,6 @@
 package com.sneakershop.backend.service.pricing;
 
+import com.sneakershop.backend.audit.AuditAction;
 import com.sneakershop.backend.dto.pricing.GroupPriceDTO;
 import com.sneakershop.backend.dto.pricing.PriceGroupResponse;
 import com.sneakershop.backend.dto.promotion.PromotionDTO;
@@ -10,6 +11,7 @@ import com.sneakershop.backend.repository.pricing.ProductPriceRepository;
 import com.sneakershop.backend.repository.pricing.VariantPriceGroupRepository;
 import com.sneakershop.backend.repository.product.ProductVariantRepository;
 import lombok.RequiredArgsConstructor;
+import org.springframework.data.domain.Sort;
 import org.springframework.stereotype.Service;
 
 import javax.transaction.Transactional;
@@ -27,17 +29,19 @@ public class VariantPriceGroupService {
     private final ProductVariantRepository productVariantRepository;
     private final ProductPriceRepository productPriceRepository;
     private final PricingCalculationService pricingCalculationService;
-    @Transactional
-    public void savePriceGroup(Long variantId, String loaiKhach, BigDecimal price) {
 
-        VariantPriceGroup priceGroup = variantPriceGroupRepository
+    @Transactional
+    @AuditAction(module = "PRICING", action = "CREATE", entity = "VariantPriceGroup",
+            description = "Thiết lập giá nhóm khách #{#loaiKhach} cho variant ID #{#variantId}")
+    public VariantPriceGroup savePriceGroup(Long variantId, String loaiKhach, BigDecimal price) {
+
+        VariantPriceGroup pg = variantPriceGroupRepository
                 .findByVariant_IdAndLoaiKhach(variantId, loaiKhach)
                 .orElseGet(() -> {
 
                     ProductVariant variant =
                             productVariantRepository.findById(variantId)
-                                    .orElseThrow(() ->
-                                            new RuntimeException("Variant not found"));
+                                    .orElseThrow(() -> new RuntimeException("Variant not found"));
 
                     VariantPriceGroup newGroup = new VariantPriceGroup();
                     newGroup.setVariant(variant);
@@ -45,9 +49,8 @@ public class VariantPriceGroupService {
                     return newGroup;
                 });
 
-        priceGroup.setPrice(price);
-
-        variantPriceGroupRepository.save(priceGroup);
+        pg.setPrice(price);
+        return variantPriceGroupRepository.save(pg);
     }
 
     /**
@@ -66,37 +69,28 @@ public class VariantPriceGroupService {
         return productPriceRepository
                 .findActivePrice(variantId)
                 .map(ProductPrice::getPrice)
-                .orElseThrow(() ->
-                        new RuntimeException("Không tìm thấy giá mặc định"));
+                .orElseThrow(() -> new RuntimeException("Không tìm thấy giá mặc định"));
     }
 
     @Transactional
-    public VariantPriceGroup updatePriceGroup(
-            Long variantId,
-            String loaiKhach,
-            BigDecimal newPrice) {
+    @AuditAction(module = "PRICING", action = "UPDATE", entity = "VariantPriceGroup",
+            description = "Cập nhật giá nhóm khách #{#loaiKhach} cho variant ID #{#variantId}")
+    public VariantPriceGroup updatePriceGroup(Long variantId, String loaiKhach, BigDecimal newPrice) {
 
         VariantPriceGroup existing =
                 variantPriceGroupRepository
-                        .findByVariant_IdAndLoaiKhach(
-                                variantId,
-                                loaiKhach
-                        )
-                        .orElseThrow(() ->
-                                new RuntimeException("Không tìm thấy bảng giá"));
+                        .findByVariant_IdAndLoaiKhach(variantId, loaiKhach)
+                        .orElseThrow(() -> new RuntimeException("Không tìm thấy bảng giá"));
 
         existing.setPrice(newPrice);
 
         return variantPriceGroupRepository.save(existing);
     }
 
-    /**
-     * load bảng giá
-     */
     public List<PriceGroupResponse> getAll() {
 
         List<ProductVariant> variants =
-                productVariantRepository.findAll();
+                productVariantRepository.findAll(Sort.by(Sort.Direction.DESC, "id"));
 
         List<VariantPriceGroup> allGroups =
                 variantPriceGroupRepository.findAll();
@@ -113,7 +107,7 @@ public class VariantPriceGroupService {
                     productPriceRepository
                             .findActivePrice(variant.getId())
                             .map(ProductPrice::getPrice)
-                            .orElse(null);
+                            .orElse(variant.getPrice());
 
             List<String> customerTypes = List.of("VIP", "THUONG");
 
@@ -168,7 +162,6 @@ public class VariantPriceGroupService {
                     })
                     .toList();
 
-
             return new PriceGroupResponse(
                     variant.getId(),
                     variant.getProduct().getName(),
@@ -177,19 +170,16 @@ public class VariantPriceGroupService {
                     variant.getColorway(),
                     variant.getSize(),
                     variant.getProduct().getThumbnail(),
-
                     variant.getProduct().getBrand(),
                     variant.getProduct().getGender(),
                     variant.getProduct().getMaterial(),
                     variant.getProduct().getModel(),
                     variant.getProduct().getReleaseYear(),
                     variant.getProduct().getDescription(),
-
                     basePrice,
                     groups,
                     promotions
             );
         }).toList();
-
     }
 }

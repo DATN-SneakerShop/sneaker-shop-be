@@ -1,6 +1,5 @@
 package com.sneakershop.backend.controller.pricing;
 
-import com.sneakershop.backend.AuditAction;
 import com.sneakershop.backend.dto.pricing.PriceBoardDTO;
 import com.sneakershop.backend.dto.pricing.PriceHistoryDTO;
 import com.sneakershop.backend.dto.pricing.PriceRequest;
@@ -32,13 +31,7 @@ public class ProductPriceController {
         return productPriceService.getPriceHistoryByVariant(variantId);
     }
 
-
     @PostMapping("/variant/{variantId}")
-    @AuditAction(
-            module = "PRICING",
-            action = "CREATE_PRICE",
-            entity = "PRODUCT_PRICE"
-    )
     public ProductPrice createPrice(
             @PathVariable Long variantId,
             @RequestBody PriceRequest request
@@ -46,14 +39,8 @@ public class ProductPriceController {
         return productPriceService.updatePrice(variantId, request);
     }
 
-
     // ❌ Xóa giá (chỉ xóa giá lịch sử)
     @DeleteMapping("/{id}")
-    @AuditAction(
-            module = "PRICING",
-            action = "DELETE_PRICE",
-            entity = "PRODUCT_PRICE"
-    )
     public void deletePrice(@PathVariable Long id) {
         productPriceService.deletePrice(id);
     }

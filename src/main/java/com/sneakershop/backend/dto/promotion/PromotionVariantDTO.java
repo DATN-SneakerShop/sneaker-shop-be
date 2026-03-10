@@ -1,8 +1,8 @@
 package com.sneakershop.backend.dto.promotion;
 
 import lombok.Data;
-
 import java.math.BigDecimal;
+
 @Data
 public class PromotionVariantDTO {
 
@@ -20,6 +20,6 @@ public class PromotionVariantDTO {
     /** ✅ Tồn kho */
     private Integer stock;
 
-    /** ✅ Ảnh sản phẩm */
-    private String image;
+    /** 🔥 ĐÃ ĐỔI TÊN THÀNH thumbnail ĐỂ FRONTEND NHẬN ĐƯỢC ẢNH */
+    private String thumbnail;
 }

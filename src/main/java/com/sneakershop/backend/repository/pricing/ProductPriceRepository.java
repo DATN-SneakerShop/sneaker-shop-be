@@ -19,19 +19,14 @@ public interface ProductPriceRepository extends JpaRepository<ProductPrice, Long
      */
     @Query("""
     SELECT new com.sneakershop.backend.dto.pricing.PriceBoardDTO(
-        v.id,
-        p.name,
-        v.sku,
-        v.colorway,
-        v.size,
-        pp.price,
-        c.symbol
+        v.id, p.name, v.sku, v.colorway, v.size, pp.price, c.symbol
     )
     FROM ProductVariant v
     JOIN v.product p
     LEFT JOIN ProductPrice pp
         ON pp.variant = v AND pp.endDate IS NULL
     LEFT JOIN pp.currency c
+    ORDER BY v.id DESC
 """)
     List<PriceBoardDTO> getCurrentPriceBoard();
 

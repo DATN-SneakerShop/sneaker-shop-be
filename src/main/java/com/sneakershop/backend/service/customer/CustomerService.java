@@ -1,5 +1,6 @@
 package com.sneakershop.backend.service.customer;
 
+import com.sneakershop.backend.audit.AuditAction; // 🔥 Thêm import này
 import com.sneakershop.backend.entity.customer.*;
 import com.sneakershop.backend.repository.customer.*;
 import lombok.RequiredArgsConstructor;
@@ -21,8 +22,9 @@ public class CustomerService {
         return repository.findByStatusOrderByDiemTichLuyDesc("ACTIVE");
     }
 
-    // ✅ HÀM DỌN SẠCH DATABASE
     @Transactional
+    @AuditAction(module = "CUSTOMER", action = "DELETE", entity = "Customer",
+            description = "Đã dọn sạch TOÀN BỘ dữ liệu khách hàng trong Database")
     public void deleteAllCustomers() {
         rankHistoryRepo.deleteAll();
         pointHistoryRepo.deleteAll();
@@ -31,6 +33,8 @@ public class CustomerService {
     }
 
     @Transactional
+    @AuditAction(module = "CUSTOMER", action = "CREATE", entity = "Customer",
+            description = "Đã thêm khách hàng mới: #{#kh.ten} (Email: #{#kh.email})")
     public Customer create(Customer kh) {
         if (repository.existsByEmail(kh.getEmail())) {
             throw new RuntimeException("Email này đã được sử dụng trong hệ thống, vui lòng kiểm tra lại!");
@@ -38,13 +42,12 @@ public class CustomerService {
         kh.setStatus("ACTIVE");
         kh.setDiemTichLuy(kh.getDiemTichLuy() != null ? kh.getDiemTichLuy() : 0);
         kh.setLoaiKhach(calculateRank(kh.getDiemTichLuy()));
-
-        Customer saved = repository.save(kh);
-        auditLogService.log(saved.getId(), "CREATE", "Thêm khách hàng mới", "ADMIN", "127.0.0.1");
-        return saved;
+        return repository.save(kh);
     }
 
     @Transactional
+    @AuditAction(module = "CUSTOMER", action = "UPDATE", entity = "Customer",
+            description = "Đã cập nhật thông tin khách hàng ID #{#id} thành tên: #{#data.ten}")
     public Customer update(Long id, Customer data) {
         Customer kh = repository.findById(id).orElseThrow(() -> new RuntimeException("Không tìm thấy khách hàng"));
 
@@ -61,7 +64,6 @@ public class CustomerService {
         Integer newPoint = data.getDiemTichLuy() != null ? data.getDiemTichLuy() : 0;
 
         if (!oldPoint.equals(newPoint)) {
-            // Lưu lịch sử điểm
             CustomerPointHistory ph = new CustomerPointHistory();
             ph.setCustomerId(kh.getId());
             ph.setOldPoint(oldPoint);
@@ -70,10 +72,8 @@ public class CustomerService {
             pointHistoryRepo.save(ph);
 
             kh.setDiemTichLuy(newPoint);
-            // Kiểm tra và lưu lịch sử hạng (Nếu có thay đổi)
             updateRankHistory(kh);
         }
-
         return repository.save(kh);
     }
 
@@ -97,6 +97,8 @@ public class CustomerService {
         return "NORMAL";
     }
 
+    @AuditAction(module = "CUSTOMER", action = "DELETE", entity = "Customer",
+            description = "Đã vô hiệu hóa (INACTIVE) khách hàng ID #{#id}")
     public void delete(Long id) {
         Customer kh = repository.findById(id).orElseThrow(() -> new RuntimeException("Không tìm thấy"));
         kh.setStatus("INACTIVE");
