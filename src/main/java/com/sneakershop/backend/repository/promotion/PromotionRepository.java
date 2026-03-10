@@ -10,6 +10,7 @@ import java.util.List;
 
 public interface PromotionRepository extends JpaRepository<Promotion, Long> {
 
+    // 🔥 FIX 1: Đã gắn thêm @Param để Spring Boot map đúng dữ liệu
     @Query("""
         SELECT DISTINCT p
         FROM Promotion p
@@ -19,8 +20,8 @@ public interface PromotionRepository extends JpaRepository<Promotion, Long> {
           AND :now BETWEEN p.startTime AND p.endTime
     """)
     List<Promotion> findAllActivePromotionsByVariant(
-            Long variantId,
-            LocalDateTime now
+            @Param("variantId") Long variantId,
+            @Param("now") LocalDateTime now
     );
 
     @Query(value = """
@@ -32,6 +33,7 @@ public interface PromotionRepository extends JpaRepository<Promotion, Long> {
 
     boolean existsByNameIgnoreCase(String name);
 
+    // 🔥 FIX 2: Gắn thêm @Param cho đồng bộ
     @Query("""
     SELECT p
     FROM Promotion p
@@ -40,7 +42,7 @@ public interface PromotionRepository extends JpaRepository<Promotion, Long> {
       AND p.active = true
       AND p.deleted = false
       AND :now BETWEEN p.startTime AND p.endTime
-""")
+    """)
     List<Promotion> findActivePromotions(
             @Param("variantId") Long variantId,
             @Param("now") LocalDateTime now);

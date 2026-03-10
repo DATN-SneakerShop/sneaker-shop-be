@@ -1,5 +1,6 @@
 package com.sneakershop.backend.service.login;
 
+import com.sneakershop.backend.audit.AuditAction;
 import com.sneakershop.backend.dto.login.UserRequest;
 import com.sneakershop.backend.entity.login.AuditLog;
 import com.sneakershop.backend.entity.login.Role;
@@ -25,11 +26,16 @@ public class UserService {
     private final AuditLogRepository auditRepository;
     private final PasswordEncoder passwordEncoder;
 
+
     public List<User> getAllUsers() {
-        return userRepository.findAll();
+        // 🔥 ĐỔI TỪ findAll() SANG findAllByOrderByIdDesc()
+        return userRepository.findAllByOrderByIdDesc();
     }
 
+    // 🔥 ĐÃ NÂNG CẤP CAMERA: Lấy cả Họ Tên và Danh sách Quyền
     @Transactional
+    @AuditAction(module = "AUTH", action = "CREATE", entity = "User",
+            description = "Đã cấp tài khoản: #{#request.username} | Tên: #{#request.fullName} | Email: #{#request.email} | Quyền: #{#request.roleCodes}")
     public void createUser(UserRequest request, String ip, User admin) {
         if (userRepository.existsByUsername(request.getUsername())) {
             throw new IllegalArgumentException("Tên đăng nhập đã tồn tại!");
@@ -56,12 +62,13 @@ public class UserService {
                     .orElseThrow(() -> new RuntimeException("Lỗi: Role CUSTOMER chưa được tạo!"));
             user.setRoles(Set.of(customerRole));
         }
-
-        User savedUser = userRepository.save(user);
-        saveAuditLog("CREATE", savedUser.getId(), "Admin tạo user: " + user.getUsername(), ip, admin);
+        userRepository.save(user);
     }
 
+    // 🔥 ĐÃ NÂNG CẤP CAMERA: Bắt sự thay đổi Họ tên, Email, Quyền
     @Transactional
+    @AuditAction(module = "AUTH", action = "UPDATE", entity = "User",
+            description = "Đã cập nhật tài khoản ID #{#id} | Tên: #{#request.fullName} | Email: #{#request.email} | Quyền: #{#request.roleCodes}")
     public void updateUser(Long id, UserRequest request, String ip, User admin) {
         User user = userRepository.findById(id)
                 .orElseThrow(() -> new IllegalArgumentException("Không tìm thấy người dùng"));
@@ -84,12 +91,12 @@ public class UserService {
                     .collect(Collectors.toSet());
             user.setRoles(roles);
         }
-
         userRepository.save(user);
-        saveAuditLog("UPDATE", id, "Cập nhật user: " + user.getUsername(), ip, admin);
     }
 
     @Transactional
+    @AuditAction(module = "AUTH", action = "DELETE", entity = "User",
+            description = "Đã xóa vĩnh viễn tài khoản ID #{#userId} khỏi hệ thống")
     public void deleteUser(Long userId, String ip, User admin) {
         User user = userRepository.findById(userId)
                 .orElseThrow(() -> new IllegalArgumentException("Không tìm thấy người dùng"));
@@ -99,40 +106,28 @@ public class UserService {
             log.setPerformedBy(null);
         }
         auditRepository.saveAll(logs);
-
         userRepository.delete(user);
-        saveAuditLog("HARD_DELETE", userId, "Đã xóa vĩnh viễn tài khoản: " + user.getUsername(), ip, admin);
     }
 
-    // Bổ sung để fix lỗi trang Profile/Me
+    // 🔥 NÂNG CẤP CAMERA: Lấy tên và email mới khi User tự cập nhật Profile
     @Transactional
+    @AuditAction(module = "AUTH", action = "UPDATE_PROFILE", entity = "User",
+            description = "Đã tự cập nhật hồ sơ cá nhân | Tên mới: #{#fullName} | Email mới: #{#email}")
     public void updateProfile(String username, String fullName, String email, String ip) {
         User user = userRepository.findByUsername(username).orElseThrow(() -> new RuntimeException("User not found"));
         user.setFullName(fullName);
         user.setEmail(email);
         userRepository.save(user);
-        saveAuditLog("UPDATE_PROFILE", user.getId(), "Cập nhật hồ sơ cá nhân", ip, user);
     }
 
     @Transactional
+    @AuditAction(module = "AUTH", action = "CHANGE_PASSWORD", entity = "User",
+            description = "Đã chủ động thay đổi mật khẩu tài khoản")
     public void changePassword(String username, String oldPwd, String newPwd, String ip) {
         User user = userRepository.findByUsername(username).orElseThrow(() -> new RuntimeException("User not found"));
         if (!passwordEncoder.matches(oldPwd, user.getPasswordHash())) throw new IllegalArgumentException("Mật khẩu cũ sai!");
         user.setPasswordHash(passwordEncoder.encode(newPwd));
         userRepository.save(user);
-        saveAuditLog("CHANGE_PASSWORD", user.getId(), "Đổi mật khẩu", ip, user);
-    }
-
-    private void saveAuditLog(String action, Long entityId, String summary, String ip, User performedBy) {
-        AuditLog log = new AuditLog();
-        log.setModule("USER_MANAGEMENT");
-        log.setAction(action);
-        log.setEntityName("User");
-        log.setEntityId(entityId);
-        log.setSummary(summary);
-        log.setIpAddress(ip);
-        log.setPerformedBy(performedBy);
-        auditRepository.save(log);
     }
 
     public List<AuditLog> getAllAuditLogs() {

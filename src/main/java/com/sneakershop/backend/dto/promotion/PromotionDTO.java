@@ -1,6 +1,5 @@
 package com.sneakershop.backend.dto.promotion;
 
-import com.sneakershop.backend.entity.pricing.ProductPrice;
 import com.sneakershop.backend.entity.product.ProductVariant;
 import com.sneakershop.backend.entity.promotion.DiscountType;
 import com.sneakershop.backend.entity.promotion.Promotion;
@@ -8,7 +7,6 @@ import lombok.Data;
 
 import java.math.BigDecimal;
 import java.time.LocalDateTime;
-import java.util.Comparator;
 import java.util.List;
 
 @Data
@@ -23,16 +21,14 @@ public class PromotionDTO {
     private LocalDateTime startTime;
     private LocalDateTime endTime;
     private Boolean active;
-
-    // dùng cho form
     private List<Long> variantIds;
-
-    // dùng cho view detail
     private List<PromotionVariantDTO> variants;
+
+    // 🔥 URL Server để Frontend không phải tự ghép
+    private static final String IMAGE_BASE_URL = "http://localhost:8080/";
 
     public static PromotionDTO fromEntity(Promotion p) {
         PromotionDTO dto = new PromotionDTO();
-
         dto.setId(p.getId());
         dto.setName(p.getName());
         dto.setCode(p.getCode());
@@ -43,88 +39,42 @@ public class PromotionDTO {
         dto.setEndTime(p.getEndTime());
         dto.setActive(p.getActive());
 
-        if (p.getVariants() == null || p.getVariants().isEmpty()) {
-            dto.setVariantIds(List.of());
-            dto.setVariants(List.of());
-            return dto;
+        if (p.getVariants() != null) {
+            dto.setVariantIds(p.getVariants().stream().map(ProductVariant::getId).toList());
+            dto.setVariants(p.getVariants().stream().map(v -> {
+                PromotionVariantDTO pv = new PromotionVariantDTO();
+                pv.setVariantId(v.getId());
+                pv.setProductName(v.getProduct().getName());
+                pv.setColor(v.getColorway());
+                pv.setSize(v.getSize() == null ? null : Integer.valueOf(v.getSize()));
+                pv.setStock(v.getStock());
+
+                // 🔥 FIX ẢNH: Gắn thumbnail và tự ghép domain
+                String thumbPath = v.getProduct().getThumbnail();
+                if (thumbPath != null && !thumbPath.startsWith("http")) {
+                    pv.setThumbnail(IMAGE_BASE_URL + thumbPath);
+                } else {
+                    pv.setThumbnail(thumbPath);
+                }
+
+                // 🔥 FIX GIÁ: Ưu tiên lấy giá bán, nếu ko có thì lấy giá gốc
+                BigDecimal currentPrice = v.getSalePrice() != null && v.getSalePrice().compareTo(BigDecimal.ZERO) > 0
+                        ? v.getSalePrice() : (v.getPrice() != null ? v.getPrice() : BigDecimal.ZERO);
+
+                pv.setPrice(currentPrice);
+                pv.setDiscountedPrice(calculateDiscountPrice(currentPrice, p.getDiscountType(), p.getDiscountValue()));
+
+                return pv;
+            }).toList());
         }
-
-        // danh sách id variant (cho form edit)
-        dto.setVariantIds(
-                p.getVariants().stream()
-                        .map(ProductVariant::getId)
-                        .toList()
-        );
-
-        // danh sách variant cho view
-        dto.setVariants(
-                p.getVariants().stream()
-                        .map(v -> {
-                            PromotionVariantDTO pv = new PromotionVariantDTO();
-
-                            BigDecimal price = getCurrentPrice(v);
-                            BigDecimal discountedPrice = calculateDiscountPrice(
-                                    price,
-                                    p.getDiscountType(),
-                                    p.getDiscountValue()
-                            );
-
-                            pv.setVariantId(v.getId());
-                            pv.setProductName(v.getProduct().getName());
-                            pv.setColor(v.getColorway());
-                            pv.setSize(
-                                    v.getSize() == null ? null : Integer.valueOf(v.getSize())
-                            );
-
-                            pv.setPrice(price);
-                            pv.setDiscountedPrice(discountedPrice);
-                            pv.setStock(v.getStock());
-                            pv.setImage(v.getProduct().getThumbnail());
-                            return pv;
-                        })
-                        .toList()
-        );
-
         return dto;
     }
-    
-    /** ✅ LẤY GIÁ HIỆN TẠI CỦA VARIANT (theo entity main) */
-    private static BigDecimal getCurrentPrice(ProductVariant v) {
 
-        if (v == null) {
-            return BigDecimal.ZERO;
-        }
-
-        // ưu tiên salePrice nếu có
-        if (v.getSalePrice() != null
-                && v.getSalePrice().compareTo(BigDecimal.ZERO) > 0) {
-            return v.getSalePrice();
-        }
-
-        return v.getPrice() != null
-                ? v.getPrice()
-                : BigDecimal.ZERO;
-    }
-    /** ✅ TÍNH GIÁ SAU GIẢM */
-    private static BigDecimal calculateDiscountPrice(
-            BigDecimal price,
-            DiscountType type,
-            BigDecimal value
-    ) {
-        if (price == null || price.compareTo(BigDecimal.ZERO) <= 0) {
-            return BigDecimal.ZERO;
-        }
-
+    private static BigDecimal calculateDiscountPrice(BigDecimal price, DiscountType type, BigDecimal value) {
+        if (price == null || price.compareTo(BigDecimal.ZERO) <= 0) return BigDecimal.ZERO;
         if (type == DiscountType.PERCENT) {
-            return price.subtract(
-                    price.multiply(value).divide(BigDecimal.valueOf(100))
-            );
+            return price.subtract(price.multiply(value).divide(BigDecimal.valueOf(100)));
         }
-
-        if (type == DiscountType.AMOUNT) {
-            return price.subtract(value).max(BigDecimal.ZERO);
-        }
-
-        return price;
+        return price.subtract(value).max(BigDecimal.ZERO);
     }
 }

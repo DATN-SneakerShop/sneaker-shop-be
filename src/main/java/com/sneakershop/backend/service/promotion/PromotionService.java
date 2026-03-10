@@ -1,5 +1,6 @@
 package com.sneakershop.backend.service.promotion;
 
+import com.sneakershop.backend.audit.AuditAction;
 import com.sneakershop.backend.dto.promotion.*;
 import com.sneakershop.backend.entity.product.ProductVariant;
 import com.sneakershop.backend.entity.promotion.Promotion;
@@ -24,12 +25,14 @@ public class PromotionService {
         return promotionRepository.findAll().stream().map(PromotionDTO::fromEntity).toList();
     }
 
-    // ✅ Bổ sung hàm getDetail cho Controller
     public PromotionDTO getDetail(Long id) {
         Promotion p = promotionRepository.findById(id).orElseThrow(() -> new EntityNotFoundException("Not found"));
         return PromotionDTO.fromEntity(p);
     }
 
+    // 🔥 CAMERA CHO TẠO MỚI (Gộp chung vào nhóm PRICING)
+    @AuditAction(module = "PRICING", action = "CREATE", entity = "Promotion",
+            description = "Tạo đợt giảm giá mới: #{#request.name} | Loại: #{#request.discountType} | Mức giảm: #{#request.discountValue}")
     public PromotionDTO create(CreatePromotionRequest request) {
         Promotion p = new Promotion();
         p.setCode("DG" + System.currentTimeMillis());
@@ -37,13 +40,18 @@ public class PromotionService {
         return PromotionDTO.fromEntity(promotionRepository.save(p));
     }
 
-    // ✅ Bổ sung hàm update cho Controller
+    // 🔥 CAMERA CHO CẬP NHẬT
+    @AuditAction(module = "PRICING", action = "UPDATE", entity = "Promotion",
+            description = "Cập nhật đợt giảm giá ID #{#id} | Tên mới: #{#request.name} | Loại: #{#request.discountType}")
     public PromotionDTO update(Long id, UpdatePromotionRequest request) {
         Promotion p = promotionRepository.findById(id).orElseThrow(() -> new EntityNotFoundException("Not found"));
         mapFromRequest(p, request);
         return PromotionDTO.fromEntity(promotionRepository.save(p));
     }
 
+    // 🔥 CAMERA CHO VIỆC BẬT/TẮT TRẠNG THÁI
+    @AuditAction(module = "PRICING", action = "UPDATE_STATUS", entity = "Promotion",
+            description = "Thay đổi trạng thái giảm giá ID #{#id} thành: #{#active ? 'Hoạt động' : 'Tạm ngưng'}")
     public void toggleActive(Long id, Boolean active) {
         Promotion p = promotionRepository.findById(id).orElseThrow(() -> new EntityNotFoundException("Not found"));
         if (Boolean.TRUE.equals(active) && p.getEndTime().isBefore(LocalDateTime.now())) {
@@ -53,6 +61,9 @@ public class PromotionService {
         promotionRepository.save(p);
     }
 
+    // 🔥 CAMERA CHO XÓA
+    @AuditAction(module = "PRICING", action = "DELETE", entity = "Promotion",
+            description = "Đã xóa đợt giảm giá ID #{#id} khỏi hệ thống")
     public void delete(Long id) {
         Promotion p = promotionRepository.findById(id).orElseThrow(() -> new EntityNotFoundException("Not found"));
         p.setDeleted(true);
@@ -67,6 +78,7 @@ public class PromotionService {
         p.setEndTime(r.getEndTime());
         if (r.getVariantIds() != null) {
             List<ProductVariant> variants = variantRepository.findAllById(r.getVariantIds());
+            p.getVariants().clear(); // Fix lỗi trùng lặp khi update
             p.getVariants().addAll(variants);
         }
     }
