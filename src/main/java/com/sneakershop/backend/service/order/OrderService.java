@@ -2,6 +2,7 @@ package com.sneakershop.backend.service.order;
 
 import com.sneakershop.backend.dto.customer.CustomerSpendingDTO;
 import com.sneakershop.backend.dto.customer.InactiveCustomerDTO;
+import com.sneakershop.backend.audit.AuditAction; // Đã thêm import này
 import com.sneakershop.backend.dto.order.*;
 import com.sneakershop.backend.entity.customer.Customer;
 import com.sneakershop.backend.entity.login.User;
@@ -38,33 +39,33 @@ public class OrderService {
     private final CustomerRepository customerRepo;
     private final PricingCalculationService pricingCalculationService;
 
-private Order getOrderOr404(Long id) {
-    return orderRepo.findByIdAndDeletedFalse(id)
-            .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Order not found: " + id));
-}
+    private Order getOrderOr404(Long id) {
+        return orderRepo.findByIdAndDeletedFalse(id)
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Order not found: " + id));
+    }
 
-private void assertEditable(Order order) {
-    if (order.getOrderStatus() != OrderStatus.NEW && order.getOrderStatus() != OrderStatus.PROCESSING) {
-        throw new ResponseStatusException(HttpStatus.BAD_REQUEST,
-                "Order is not editable in status: " + order.getOrderStatus());
+    private void assertEditable(Order order) {
+        if (order.getOrderStatus() != OrderStatus.NEW && order.getOrderStatus() != OrderStatus.PROCESSING) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST,
+                    "Order is not editable in status: " + order.getOrderStatus());
+        }
     }
-}
 
-private void assertCancelable(Order order) {
-    if (order.getOrderStatus() == OrderStatus.COMPLETED) {
-        throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Completed order cannot be cancelled.");
+    private void assertCancelable(Order order) {
+        if (order.getOrderStatus() == OrderStatus.COMPLETED) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Completed order cannot be cancelled.");
+        }
+        if (order.getOrderStatus() == OrderStatus.CANCELLED) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Order already cancelled.");
+        }
     }
-    if (order.getOrderStatus() == OrderStatus.CANCELLED) {
-        throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Order already cancelled.");
-    }
-}
 
-private void assertReturnable(Order order) {
-    if (order.getOrderStatus() != OrderStatus.SHIPPING && order.getOrderStatus() != OrderStatus.COMPLETED) {
-        throw new ResponseStatusException(HttpStatus.BAD_REQUEST,
-                "Order is not returnable in status: " + order.getOrderStatus());
+    private void assertReturnable(Order order) {
+        if (order.getOrderStatus() != OrderStatus.SHIPPING && order.getOrderStatus() != OrderStatus.COMPLETED) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST,
+                    "Order is not returnable in status: " + order.getOrderStatus());
+        }
     }
-}
 
     // Checklist: cập nhật tồn kho khi hủy/hoàn trả (best-effort, không phụ thuộc module product)
     private void adjustVariantStockBestEffort(Long variantId, int delta) {
@@ -73,7 +74,7 @@ private void assertReturnable(Order order) {
         for (String col : columns) {
             try {
                 int updated = em.createNativeQuery(
-                                "UPDATE product_variant SET " + col + " = " + col + " + :delta WHERE id = :id")
+                        "UPDATE product_variant SET " + col + " = " + col + " + :delta WHERE id = :id")
                         .setParameter("delta", delta)
                         .setParameter("id", variantId)
                         .executeUpdate();
@@ -85,6 +86,7 @@ private void assertReturnable(Order order) {
         // If cannot update (different schema), ignore to keep project stable.
     }
 
+    @AuditAction(module = "ORDER", action = "CREATE", entity = "Order", description = "Tạo mới đơn hàng qua kênh: #{#req.channel}")
     @Transactional
     public OrderDetailDTO create(CreateOrderRequest req) {
         Order order = new Order();
@@ -177,6 +179,7 @@ private void assertReturnable(Order order) {
         return toDetailDTO(order);
     }
 
+    @AuditAction(module = "ORDER", action = "UPDATE", entity = "Order", description = "Cập nhật thông tin đơn hàng ID: #{#id}")
     @Transactional
     public OrderDetailDTO update(Long id, UpdateOrderRequest req) {
         Order order = getOrderOr404(id);
@@ -194,6 +197,7 @@ private void assertReturnable(Order order) {
         return toDetailDTO(orderRepo.save(order));
     }
 
+    @AuditAction(module = "ORDER", action = "CANCEL", entity = "Order", description = "Hủy đơn hàng ID: #{#id} với lý do: #{#req.reason}")
     @Transactional
     public OrderDetailDTO cancel(Long id, CancelOrderRequest req) {
         Order order = getOrderOr404(id);
@@ -218,6 +222,7 @@ private void assertReturnable(Order order) {
     }
 
     // Checklist: thêm trạng thái "Đang giao" + "Hoàn tất giao hàng"
+    @AuditAction(module = "ORDER", action = "UPDATE_STATUS", entity = "Order", description = "Cập nhật trạng thái đơn hàng ID: #{#id} thành: #{#req.status}")
     @Transactional
     public OrderDetailDTO updateStatus(Long id, UpdateOrderStatusRequest req) {
         Order order = getOrderOr404(id);
@@ -252,6 +257,7 @@ private void assertReturnable(Order order) {
         return toDetailDTO(orderRepo.save(order));
     }
 
+    @AuditAction(module = "ORDER", action = "DELETE", entity = "Order", description = "Xóa (ẩn) đơn hàng ID: #{#id}")
     @Transactional
     public void delete(Long id) {
         Order order = getOrderOr404(id);
@@ -260,6 +266,7 @@ private void assertReturnable(Order order) {
         orderRepo.save(order);
     }
 
+    @AuditAction(module = "ORDER", action = "ADD_ITEMS", entity = "Order", description = "Thêm sản phẩm mới vào đơn hàng ID: #{#orderId}")
     @Transactional
     public OrderDetailDTO addItems(Long orderId, List<OrderItemCreateRequest> itemsReq) {
 
@@ -304,6 +311,7 @@ private void assertReturnable(Order order) {
         return toDetailDTO(orderRepo.save(order));
     }
 
+    @AuditAction(module = "ORDER", action = "UPDATE_ITEM_QTY", entity = "Order", description = "Cập nhật số lượng sản phẩm ID: #{#itemId} trong đơn hàng ID: #{#orderId} thành #{#req.quantity}")
     @Transactional
     public OrderDetailDTO updateItemQty(Long orderId, Long itemId, UpdateItemQuantityRequest req) {
 
@@ -342,6 +350,7 @@ private void assertReturnable(Order order) {
         return toDetailDTO(orderRepo.save(order));
     }
 
+    @AuditAction(module = "ORDER", action = "RETURN", entity = "Order", description = "Xử lý hoàn trả cho đơn hàng ID: #{#orderId}, trạng thái: #{#req.returnStatus}")
     @Transactional
     public OrderDetailDTO applyReturn(Long orderId, ReturnOrderRequest req) {
         Order order = getOrderOr404(orderId);
@@ -368,21 +377,21 @@ private void assertReturnable(Order order) {
         }
 
         BigDecimal returnedAmount = BigDecimal.ZERO;
-for (OrderItem it : order.getItems()) {
-    int rq = it.getReturnedQuantity() == null ? 0 : it.getReturnedQuantity();
-    if (rq > 0) {
-        BigDecimal qty = BigDecimal.valueOf(it.getQuantity() == null ? 0 : it.getQuantity());
-        BigDecimal netUnit;
-        if (qty.signum() > 0 && it.getLineTotalAmount() != null) {
-            netUnit = nz(it.getLineTotalAmount()).divide(qty, 2, RoundingMode.HALF_UP);
-        } else {
-            netUnit = nz(it.getUnitPrice());
+        for (OrderItem it : order.getItems()) {
+            int rq = it.getReturnedQuantity() == null ? 0 : it.getReturnedQuantity();
+            if (rq > 0) {
+                BigDecimal qty = BigDecimal.valueOf(it.getQuantity() == null ? 0 : it.getQuantity());
+                BigDecimal netUnit;
+                if (qty.signum() > 0 && it.getLineTotalAmount() != null) {
+                    netUnit = nz(it.getLineTotalAmount()).divide(qty, 2, RoundingMode.HALF_UP);
+                } else {
+                    netUnit = nz(it.getUnitPrice());
+                }
+                if (netUnit.signum() < 0) netUnit = BigDecimal.ZERO;
+                returnedAmount = returnedAmount.add(netUnit.multiply(BigDecimal.valueOf(rq)));
+            }
         }
-        if (netUnit.signum() < 0) netUnit = BigDecimal.ZERO;
-        returnedAmount = returnedAmount.add(netUnit.multiply(BigDecimal.valueOf(rq)));
-    }
-}
-if (req.getReturnedAmountOverride() != null) {
+        if (req.getReturnedAmountOverride() != null) {
             returnedAmount = nz(req.getReturnedAmountOverride());
         }
 
@@ -657,3 +666,4 @@ if (req.getReturnedAmountOverride() != null) {
         System.out.println("Trừ điểm khách: -" + diemTru);
     }
 }
+

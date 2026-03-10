@@ -1,5 +1,6 @@
 package com.sneakershop.backend.service.product;
 
+import com.sneakershop.backend.audit.AuditAction;
 import com.sneakershop.backend.dto.product.CategoryRequest;
 import com.sneakershop.backend.dto.product.CategoryResponse;
 import com.sneakershop.backend.entity.product.Category;
@@ -19,62 +20,48 @@ public class CategoryService {
 
     private final CategoryRepository categoryRepository;
 
-    /* ================= CREATE ================= */
+    @AuditAction(module = "PRODUCT", action = "CREATE", entity = "Category",
+            description = "Đã thêm mới danh mục: #{#request.name}")
     public CategoryResponse create(CategoryRequest request) {
         Category c = new Category();
         c.setName(request.getName());
         c.setDescription(request.getDescription());
-        c.setThumbnail(request.getThumbnail()); // 👈 thêm thumbnail
-
+        c.setThumbnail(request.getThumbnail());
         categoryRepository.save(c);
-
         return mapToResponse(c);
     }
 
-    /* ================= GET ALL ================= */
     public List<CategoryResponse> getAll() {
-        return categoryRepository.findAll()
-                .stream()
+        // 🔥 SỬA: Dùng findAllByOrderByIdDesc() để hàng mới luôn ở đầu danh sách
+        return categoryRepository.findAllByOrderByIdDesc().stream()
                 .map(this::mapToResponse)
                 .collect(Collectors.toList());
     }
 
-    /* ================= UPDATE ================= */
     @Transactional
+    @AuditAction(module = "PRODUCT", action = "UPDATE", entity = "Category",
+            description = "Đã cập nhật danh mục ID #{#id} thành tên: #{#request.name}")
     public CategoryResponse update(Long id, CategoryRequest request) {
-
-        Category category = categoryRepository.findById(id)
-                .orElseThrow(() ->
-                        new EntityNotFoundException("Category not found: " + id)
-                );
-
+        Category category = categoryRepository.findById(id).orElseThrow(() -> new EntityNotFoundException("Category not found: " + id));
         category.setName(request.getName());
         category.setDescription(request.getDescription());
-        category.setThumbnail(request.getThumbnail()); // 👈 thêm thumbnail
-
+        category.setThumbnail(request.getThumbnail());
         return mapToResponse(category);
     }
 
-    /* ================= DELETE ================= */
     @Transactional
+    @AuditAction(module = "PRODUCT", action = "DELETE", entity = "Category",
+            description = "Đã xóa danh mục ID #{#id} khỏi hệ thống")
     public void delete(Long id) {
-
-        Category category = categoryRepository.findById(id)
-                .orElseThrow(() ->
-                        new EntityNotFoundException("Category not found: " + id)
-                );
-
-        // Gỡ khỏi tất cả product trước khi xóa
+        Category category = categoryRepository.findById(id).orElseThrow(() -> new EntityNotFoundException("Category not found: " + id));
         if (category.getProducts() != null) {
             for (Product product : category.getProducts()) {
                 product.getCategories().remove(category);
             }
         }
-
         categoryRepository.delete(category);
     }
 
-    /* ================= MAP ENTITY -> RESPONSE ================= */
     private CategoryResponse mapToResponse(Category category) {
         CategoryResponse res = new CategoryResponse();
         res.setId(category.getId());

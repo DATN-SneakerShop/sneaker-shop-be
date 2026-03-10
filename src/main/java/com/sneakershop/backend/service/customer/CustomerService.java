@@ -1,5 +1,6 @@
 package com.sneakershop.backend.service.customer;
 
+import com.sneakershop.backend.audit.AuditAction; // 🔥 Thêm import này
 import com.sneakershop.backend.entity.customer.*;
 import com.sneakershop.backend.repository.customer.*;
 import lombok.RequiredArgsConstructor;
@@ -23,8 +24,9 @@ public class CustomerService {
         return repository.findByStatusOrderByDiemTichLuyDesc("ACTIVE");
     }
 
-    // ✅ HÀM DỌN SẠCH DATABASE
     @Transactional
+    @AuditAction(module = "CUSTOMER", action = "DELETE", entity = "Customer",
+            description = "Đã dọn sạch TOÀN BỘ dữ liệu khách hàng trong Database")
     public void deleteAllCustomers() {
         rankHistoryRepo.deleteAll();
         pointHistoryRepo.deleteAll();
@@ -33,6 +35,8 @@ public class CustomerService {
     }
 
     @Transactional
+    @AuditAction(module = "CUSTOMER", action = "CREATE", entity = "Customer",
+            description = "Đã thêm khách hàng mới: #{#kh.ten} (Email: #{#kh.email})")
     public Customer create(Customer kh) {
         validateCustomer(kh);
         if (repository.existsByEmail(kh.getEmail())) {
@@ -41,6 +45,7 @@ public class CustomerService {
         kh.setStatus("ACTIVE");
         kh.setDiemTichLuy(kh.getDiemTichLuy() != null ? kh.getDiemTichLuy() : 0);
         kh.setLoaiKhach(calculateRank(kh.getDiemTichLuy()));
+
         kh.setUuDaiTheoDiem(
                 discountByPoint(kh.getDiemTichLuy())
         );
@@ -55,6 +60,8 @@ public class CustomerService {
     }
 
     @Transactional
+    @AuditAction(module = "CUSTOMER", action = "UPDATE", entity = "Customer",
+            description = "Đã cập nhật thông tin khách hàng ID #{#id} thành tên: #{#data.ten}")
     public Customer update(Long id, Customer data) {
 
         Customer kh = repository.findById(id)
@@ -98,6 +105,7 @@ public class CustomerService {
                 discountByGroup(kh.getLoaiKhach())
         );
 
+            updateRankHistory(kh);
         return repository.save(kh);
     }
 
@@ -135,6 +143,8 @@ public class CustomerService {
         return "NORMAL";
     }
 
+    @AuditAction(module = "CUSTOMER", action = "DELETE", entity = "Customer",
+            description = "Đã vô hiệu hóa (INACTIVE) khách hàng ID #{#id}")
     public void delete(Long id) {
         Customer kh = repository.findById(id).orElseThrow(() -> new RuntimeException("Không tìm thấy"));
         kh.setStatus("INACTIVE");
