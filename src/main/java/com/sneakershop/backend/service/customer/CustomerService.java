@@ -207,4 +207,10 @@ public class CustomerService {
         validateAge(kh.getNgaySinh());
 
     }
+
+    public Customer findByEmail(String email){
+        return repository.findByEmail(email).orElse(null);
+    }
+
+
 }
