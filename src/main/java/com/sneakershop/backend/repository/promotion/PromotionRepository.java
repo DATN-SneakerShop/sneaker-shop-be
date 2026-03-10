@@ -19,8 +19,8 @@ public interface PromotionRepository extends JpaRepository<Promotion, Long> {
           AND :now BETWEEN p.startTime AND p.endTime
     """)
     List<Promotion> findAllActivePromotionsByVariant(
-            Long variantId,
-            LocalDateTime now
+            @Param("variantId") Long variantId,
+            @Param("now") LocalDateTime now
     );
 
     @Query(value = """
@@ -33,16 +33,15 @@ public interface PromotionRepository extends JpaRepository<Promotion, Long> {
     boolean existsByNameIgnoreCase(String name);
 
     @Query("""
-SELECT p
-FROM Promotion p
-JOIN p.variants v
-WHERE v.id = :variantId
-  AND p.active = true
-  AND (p.deleted = false OR p.deleted IS NULL)
-  AND :now BETWEEN p.startTime AND p.endTime
-""")
+        SELECT p
+        FROM Promotion p
+        JOIN p.variants v
+        WHERE v.id = :variantId
+          AND p.active = true
+          AND (p.deleted = false OR p.deleted IS NULL)
+          AND :now BETWEEN p.startTime AND p.endTime
+    """)
     List<Promotion> findActivePromotions(
             @Param("variantId") Long variantId,
             @Param("now") LocalDateTime now);
-
 }

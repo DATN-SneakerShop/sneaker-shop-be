@@ -1,5 +1,6 @@
 package com.sneakershop.backend.service.login;
 
+import com.sneakershop.backend.audit.SystemAuditLogService;
 import com.sneakershop.backend.dto.login.UserRequest;
 import com.sneakershop.backend.entity.login.*;
 import com.sneakershop.backend.repository.login.*;
@@ -17,11 +18,14 @@ import java.util.Set;
 @Service
 @RequiredArgsConstructor
 public class AuthService {
+
     private final UserRepository userRepository;
     private final RoleRepository roleRepository;
     private final PasswordEncoder passwordEncoder;
-    private final AuditLogRepository auditRepository;
     private final JavaMailSender mailSender;
+
+    // 🔥 Gọi Service Log Tổng mới thay cho Repo Log cũ
+    private final SystemAuditLogService systemAuditLogService;
 
     @Transactional
     public void registerLocal(UserRequest request, String ip) {
@@ -41,8 +45,13 @@ public class AuthService {
                 .orElseThrow(() -> new RuntimeException("Role CUSTOMER chưa có trong hệ thống!"));
         user.setRoles(Set.of(customerRole));
 
-        User savedUser = userRepository.save(user);
-        saveAuditLog("REGISTER", savedUser.getId(), "Đăng ký mới qua Email: " + user.getEmail(), ip, savedUser);
+        userRepository.save(user);
+
+        // ✅ GHI LOG THỦ CÔNG QUA SERVICE MỚI
+        systemAuditLogService.logManual(
+                request.getEmail(), ip, "AUTH", "REGISTER", "User",
+                "Đăng ký mới qua Email: " + user.getEmail(), "SUCCESS", null
+        );
     }
 
     @Transactional
@@ -56,10 +65,14 @@ public class AuthService {
         userRepository.save(user);
 
         sendEmail(email, "Mã xác thực OTP SneakerShop", "Mã của bạn là: " + otp + " (Hiệu lực trong 5 phút)");
-        saveAuditLog("REQUEST_OTP", user.getId(), "Yêu cầu mã OTP khôi phục mật khẩu", "SYSTEM", user);
+
+        // ✅ GHI LOG THỦ CÔNG QUA SERVICE MỚI
+        systemAuditLogService.logManual(
+                email, "SYSTEM", "AUTH", "REQUEST_OTP", "User",
+                "Yêu cầu mã OTP khôi phục mật khẩu", "SUCCESS", null
+        );
     }
 
-    // --- LOGIC MỚI: XÁC THỰC VÀ ĐỔI MẬT KHẨU ---
     @Transactional
     public void verifyAndResetPassword(String email, String otp, String newPassword, String ip) {
         User user = userRepository.findByEmail(email)
@@ -84,8 +97,11 @@ public class AuthService {
 
         userRepository.save(user);
 
-        // 5. Lưu vết hệ thống
-        saveAuditLog("RESET_PASSWORD", user.getId(), "Đổi mật khẩu thành công qua OTP", ip, user);
+        // ✅ GHI LOG THỦ CÔNG QUA SERVICE MỚI
+        systemAuditLogService.logManual(
+                email, ip, "AUTH", "RESET_PASSWORD", "User",
+                "Đổi mật khẩu thành công qua OTP", "SUCCESS", null
+        );
     }
 
     private void sendEmail(String to, String subject, String content) {
@@ -94,17 +110,5 @@ public class AuthService {
         message.setSubject(subject);
         message.setText(content);
         mailSender.send(message);
-    }
-
-    private void saveAuditLog(String action, Long entityId, String summary, String ip, User performedBy) {
-        AuditLog log = new AuditLog();
-        log.setModule("AUTH");
-        log.setAction(action);
-        log.setEntityName("User");
-        log.setEntityId(entityId);
-        log.setSummary(summary);
-        log.setIpAddress(ip);
-        log.setPerformedBy(performedBy);
-        auditRepository.save(log);
     }
 }

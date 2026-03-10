@@ -50,38 +50,24 @@ public class PricingCalculationService {
 
         // 2️⃣ Lấy promotion active
         LocalDateTime now = LocalDateTime.now();
+        List<Promotion> promotions = promotionRepository.findActivePromotions(variantId, now);
 
-        List<Promotion> promotions =
-                promotionRepository.findActivePromotions(
-                        variantId,
-                        now
-                );
-
-        if (promotions.isEmpty()) {
+        if (promotions == null || promotions.isEmpty()) {
             return basePrice;
         }
 
-        // 3️⃣ Chọn promotion tốt nhất
+        // 3️⃣ Lọc promotion theo nhóm khách và tìm KM tốt nhất
         Promotion bestPromotion = promotions.stream()
                 .filter(p -> {
                     String group = p.getCustomerGroup();
                     return group == null
                             || "ALL".equalsIgnoreCase(group)
-                            || loaiKhach.equalsIgnoreCase(group);
+                            || (loaiKhach != null && loaiKhach.equalsIgnoreCase(group));
                 })
-                .sorted(
-                        Comparator
-                                .comparing(
-                                        (Promotion p) ->
-                                                p.getPriority() == null ? 0 : p.getPriority()
-                                )
-                                .reversed()
-                                .thenComparing(
-                                        p -> calculateDiscountAmount(basePrice, p),
-                                        Comparator.reverseOrder()
-                                )
+                .max(
+                        Comparator.comparing((Promotion p) -> p.getPriority() == null ? 0 : p.getPriority())
+                                .thenComparing(p -> calculateDiscountAmount(basePrice, p))
                 )
-                .findFirst()
                 .orElse(null);
 
         if (bestPromotion == null) {
@@ -95,17 +81,17 @@ public class PricingCalculationService {
         // 5️⃣ Giá cuối
         BigDecimal finalPrice = basePrice.subtract(discountAmount);
 
-        return finalPrice
-                .max(BigDecimal.ZERO)
-                .setScale(0, RoundingMode.HALF_UP);
+        return finalPrice.max(BigDecimal.ZERO).setScale(0, RoundingMode.HALF_UP);
     }
 
     /**
      * Tính tiền giảm
      */
-    private BigDecimal calculateDiscountAmount(
-            BigDecimal basePrice,
-            Promotion promotion) {
+    private BigDecimal calculateDiscountAmount(BigDecimal basePrice, Promotion promotion) {
+
+        if (promotion == null || promotion.getDiscountType() == null || promotion.getDiscountValue() == null) {
+            return BigDecimal.ZERO;
+        }
 
         BigDecimal discount;
 
@@ -141,10 +127,12 @@ public class PricingCalculationService {
                     calculateFinalPrice(variantId, loaiKhach);
 
             result.put(variantId, finalPrice);
+
         }
 
         return result;
     }
+
     public BigDecimal getCampaignPrice(Long variantId) {
 
         LocalDateTime now = LocalDateTime.now();
@@ -159,7 +147,6 @@ public class PricingCalculationService {
                 )
                 .map(i -> i.getPrice())
                 .min(BigDecimal::compareTo)
-
                 .orElse(null);
     }
 }

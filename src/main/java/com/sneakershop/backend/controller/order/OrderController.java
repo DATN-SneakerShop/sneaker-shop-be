@@ -1,5 +1,7 @@
 package com.sneakershop.backend.controller.order;
 
+import com.sneakershop.backend.dto.customer.CustomerSpendingDTO;
+import com.sneakershop.backend.dto.customer.InactiveCustomerDTO;
 import com.sneakershop.backend.dto.order.*;
 import com.sneakershop.backend.entity.order.enums.OrderStatus;
 import com.sneakershop.backend.entity.order.enums.ReturnStatus;
@@ -134,5 +136,23 @@ public class OrderController {
             .append("</body></html>");
 
         return ResponseEntity.ok(html.toString());
+    }
+
+    // Chi tiêu khách hàng
+    @GetMapping("/customer-spending")
+    public ResponseEntity<List<CustomerSpendingDTO>> customerSpending(){
+        return ResponseEntity.ok(orderService.getCustomerSpending());
+    }
+
+    // Top khách hàng
+    @GetMapping("/top-customers")
+    public ResponseEntity<List<CustomerSpendingDTO>> topCustomers(){
+        return ResponseEntity.ok(orderService.getTopCustomers());
+    }
+
+    // Khách hàng lâu chưa hoạt động (đang fix)
+    @GetMapping("/inactive-customers")
+    public List<InactiveCustomerDTO> getInactiveCustomers() {
+        return orderService.getInactiveCustomers();
     }
 }

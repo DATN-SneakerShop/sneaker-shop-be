@@ -1,4 +1,4 @@
-package com.sneakershop.backend;
+package com.sneakershop.backend.audit;
 
 import java.lang.annotation.*;
 
@@ -8,5 +8,6 @@ import java.lang.annotation.*;
 public @interface AuditAction {
     String module();
     String action();
-    String entity();
+    String entity() default "";
+    String description() default ""; // Cho phép nhập chi tiết thêm
 }

@@ -1,5 +1,6 @@
 package com.sneakershop.backend.service.product;
 
+import com.sneakershop.backend.audit.AuditAction;
 import com.sneakershop.backend.dto.product.*;
 import com.sneakershop.backend.entity.product.*;
 import com.sneakershop.backend.entity.pricing.ProductPrice;
@@ -38,30 +39,43 @@ public class ProductService {
             "Ngừng bán", "Ngừng bán"
     );
 
-    @Transactional
-    public ProductResponse create(ProductRequest request) {
-        if (productRepository.existsBySku(request.getSku())) {
-            throw new IllegalArgumentException("Product SKU already exists");
+    // ✅ KHỚP: image_8c4b09.jpg - Controller gọi getProducts(PageRequest)
+    public Page<ProductResponse> getProducts(Pageable pageable) {
+        if (pageable.getSort().isUnsorted()) {
+            pageable = PageRequest.of(pageable.getPageNumber(), pageable.getPageSize(), Sort.by("id").descending());
         }
+        return productRepository.findAll(pageable).map(this::toListResponse);
+    }
 
+    // ✅ KHỚP: image_8c4b27.jpg - Controller gọi searchProducts(...)
+    public Page<ProductResponse> searchProducts(List<Long> categoryIds, String keyword, int page, int size) {
+        Pageable pageable = PageRequest.of(page, size, Sort.by("id").descending());
+        long categoryCount = (categoryIds != null) ? categoryIds.size() : 0;
+        return productRepository.searchProducts(categoryIds, keyword, categoryCount, pageable).map(this::toListResponse);
+    }
+
+    // ✅ KHỚP: image_973b71.jpg - Đã sửa toResponse thành toListResponse
+    public Page<ProductResponse> searchAdvanced(ProductSearchRequest request, Pageable pageable) {
+        if (pageable.getSort().isUnsorted()) {
+            pageable = PageRequest.of(pageable.getPageNumber(), pageable.getPageSize(), Sort.by("id").descending());
+        }
+        return productRepository.findAll(ProductSpecification.build(request), pageable).map(this::toListResponse);
+    }
+
+    @Transactional
+    @AuditAction(module = "PRODUCT", action = "CREATE", entity = "Product",
+            description = "Thêm SP mới | Tên: #{#request.name} | SKU: #{#request.sku}")
+    public ProductResponse create(ProductRequest request) {
         Product product = new Product();
         product.setName(request.getName());
         product.setSku(request.getSku());
         product.setBrand(request.getBrand());
-        product.setModel(request.getModel());
-        product.setReleaseYear(request.getReleaseYear());
-        product.setGender(request.getGender());
         product.setStatus(request.getStatus() != null ? request.getStatus() : "Còn hàng");
         product.setThumbnail(request.getThumbnail());
         product.setCreatedAt(LocalDateTime.now());
-
-        product.setDescription(request.getDescription());
-        product.setMaterial(request.getMaterial());
-        product.setReleaseType(request.getReleaseType());
-        product.setLimited(Boolean.TRUE.equals(request.getLimited()));
-
         product.setCategories(categoryRepository.findAllById(request.getCategoryIds()));
 
+<<<<<<< HEAD
         List<ProductImage> images = request.getImages().stream().map(imgReq -> {
             ProductImage img = new ProductImage();
             img.setImageUrl(imgReq.getImageUrl());
@@ -118,6 +132,24 @@ public class ProductService {
                 pageable
         ).map(this::toListResponse);    }
 
+=======
+        if (request.getVariants() != null) {
+            List<ProductVariant> variants = request.getVariants().stream().map(vReq -> {
+                ProductVariant v = new ProductVariant();
+                v.setProduct(product);
+                v.setSize(vReq.getSize());
+                v.setColorway(vReq.getColorway());
+                v.setPrice(vReq.getPrice() != null ? vReq.getPrice() : BigDecimal.ZERO);
+                v.setStock(vReq.getStock());
+                v.setSku(product.getSku() + "-" + vReq.getSize());
+                return v;
+            }).collect(Collectors.toList());
+            product.setVariants(variants);
+        }
+        return toListResponse(productRepository.save(product));
+    }
+
+>>>>>>> 72a4a1368dc9b9a2592a87525854b36b6e00221d
     @Transactional(readOnly = true)
     public ProductDetailResponse getById(Long id) {
         Product p = productRepository.findDetailById(id).orElseThrow(() -> new EntityNotFoundException("Not found"));
@@ -125,6 +157,8 @@ public class ProductService {
     }
 
     @Transactional
+    @AuditAction(module = "PRODUCT", action = "UPDATE", entity = "Product",
+            description = "Sửa SP ID #{#id}")
     public ProductResponse update(Long id, ProductRequest request) {
 
         Product p = productRepository.findById(id)
@@ -141,20 +175,15 @@ public class ProductService {
         p.setBrand(request.getBrand());
         p.setThumbnail(request.getThumbnail());
         p.setCategories(categoryRepository.findAllById(request.getCategoryIds()));
-
-        p.setModel(request.getModel());
-        p.setReleaseYear(request.getReleaseYear());
-        p.setGender(request.getGender());
-        p.setStatus(request.getStatus());
-        p.setDescription(request.getDescription());
-        p.setMaterial(request.getMaterial());
-        p.setReleaseType(request.getReleaseType());
-        p.setLimited(Boolean.TRUE.equals(request.getLimited()));
-
         return toListResponse(productRepository.save(p));
     }
 
+<<<<<<< HEAD
     @Transactional
+=======
+    @AuditAction(module = "PRODUCT", action = "DELETE", entity = "Product",
+            description = "Xóa SP ID: #{#id}")
+>>>>>>> 72a4a1368dc9b9a2592a87525854b36b6e00221d
     public void delete(Long id) {
 
         Product product = productRepository.findById(id)
@@ -182,19 +211,11 @@ public class ProductService {
             vr.setSize(v.getSize());
             vr.setColorway(v.getColorway());
             vr.setStock(v.getStock());
-
-            // Lấy giá trị đang áp dụng từ bảng ProductPrice
             BigDecimal activePrice = productPriceRepository.findByVariant_IdAndEndDateIsNull(v.getId())
-                    .map(ProductPrice::getPrice)
-                    .orElse(v.getPrice() != null ? v.getPrice() : BigDecimal.ZERO);
+                    .map(ProductPrice::getPrice).orElse(BigDecimal.ZERO);
             vr.setPrice(activePrice);
-
             return vr;
         }).collect(Collectors.toList());
-    }
-
-    private String generateVariantSku(Product product, VariantRequest v) {
-        return (product.getModel() + "-" + v.getColorway() + "-" + v.getSize()).toUpperCase().replace(" ", "");
     }
 
     private ProductResponse toListResponse(Product p) {
@@ -206,6 +227,7 @@ public class ProductService {
         res.setBrand(p.getBrand());
         res.setStatus(STATUS_LABEL.getOrDefault(p.getStatus(), p.getStatus()));
         res.setThumbnail(p.getThumbnail());
+<<<<<<< HEAD
         boolean isNew = p.getCreatedAt() != null &&
                 p.getCreatedAt().isAfter(LocalDateTime.now().minusDays(7));
 
@@ -230,6 +252,10 @@ public class ProductService {
                             .map(ProductTag::getName)
                             .collect(Collectors.toList())
             );
+=======
+        if (p.getCategories() != null) {
+            res.setCategoryNames(p.getCategories().stream().map(Category::getName).collect(Collectors.toList()));
+>>>>>>> 72a4a1368dc9b9a2592a87525854b36b6e00221d
         }
         return res;
     }
@@ -239,53 +265,20 @@ public class ProductService {
         res.setId(p.getId());
         res.setName(p.getName());
         res.setSku(p.getSku());
-        res.setBrand(p.getBrand());
-        res.setModel(p.getModel());
-        res.setStatus(p.getStatus());
         res.setThumbnail(p.getThumbnail());
-
-        res.setReleaseYear(p.getReleaseYear());
-        res.setGender(p.getGender());
-        res.setReleaseType(p.getReleaseType());
-        res.setMaterial(p.getMaterial());
-        res.setLimited(p.getLimited());
-        res.setDescription(p.getDescription());
-
-        if (p.getCategories() != null) {
-            res.setCategoryIds(p.getCategories().stream().map(Category::getId).collect(Collectors.toList()));
-            res.setCategoryNames(p.getCategories().stream().map(Category::getName).collect(Collectors.toList()));
-        }
-
-        if (p.getImages() != null) {
-            res.setImages(p.getImages().stream().map(img -> {
-                ProductImageResponse imgRes = new ProductImageResponse();
-                imgRes.setId(img.getId());
-                imgRes.setUrl(img.getImageUrl());
-                imgRes.setThumbnail(img.isThumbnail());
-                return imgRes;
-            }).collect(Collectors.toList()));
-        }
-
         if (p.getVariants() != null) {
             res.setVariants(p.getVariants().stream().map(v -> {
                 ProductVariantResponse vRes = new ProductVariantResponse();
                 vRes.setId(v.getId());
                 vRes.setSku(v.getSku());
                 vRes.setSize(v.getSize());
-                vRes.setSizeType(v.getSizeType());
-                vRes.setColorway(v.getColorway());
-                vRes.setStock(v.getStock());
-
-                // 🔥 Lấy giá từ bảng ProductPrice
                 BigDecimal activePrice = productPriceRepository.findByVariant_IdAndEndDateIsNull(v.getId())
-                        .map(ProductPrice::getPrice)
-                        .orElse(v.getPrice() != null ? v.getPrice() : BigDecimal.ZERO);
+                        .map(ProductPrice::getPrice).orElse(BigDecimal.ZERO);
                 vRes.setPrice(activePrice);
-
+                vRes.setStock(v.getStock());
                 return vRes;
             }).collect(Collectors.toList()));
         }
-
         return res;
     }
     private void updateProductStatus(Product product) {

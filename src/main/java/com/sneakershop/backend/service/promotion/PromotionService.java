@@ -1,5 +1,6 @@
 package com.sneakershop.backend.service.promotion;
 
+import com.sneakershop.backend.audit.AuditAction;
 import com.sneakershop.backend.dto.promotion.*;
 import com.sneakershop.backend.entity.product.ProductVariant;
 import com.sneakershop.backend.entity.promotion.Promotion;
@@ -80,7 +81,7 @@ public class PromotionService {
 
                     // ===== IMAGE =====
                     if (!v.getProduct().getImages().isEmpty()) {
-                        item.setImage(
+                        item.setThumbnail(
                                 v.getProduct()
                                         .getImages()
                                         .get(0)
@@ -98,13 +99,15 @@ public class PromotionService {
     }
 
     // ================= CREATE =================
+
+    @AuditAction(module = "PRICING", action = "CREATE", entity = "Promotion",
+            description = "Tạo đợt giảm giá mới: #{#request.name} | Loại: #{#request.discountType} | Mức giảm: #{#request.discountValue}")
     public PromotionDTO create(CreatePromotionRequest request) {
 
         Promotion promotion = new Promotion();
 
         mapFromRequest(promotion, request);
 
-        // set code tạm
         promotion.setCode("TEMP");
 
         Promotion saved = promotionRepository.save(promotion);
@@ -115,6 +118,9 @@ public class PromotionService {
     }
 
     // ================= UPDATE =================
+
+    @AuditAction(module = "PRICING", action = "UPDATE", entity = "Promotion",
+            description = "Cập nhật đợt giảm giá ID #{#id} | Tên mới: #{#request.name} | Loại: #{#request.discountType}")
     public PromotionDTO update(Long id, UpdatePromotionRequest request) {
 
         Promotion promotion = promotionRepository.findById(id)
@@ -131,12 +137,13 @@ public class PromotionService {
 
     // ================= TOGGLE =================
 
+    @AuditAction(module = "PRICING", action = "UPDATE_STATUS", entity = "Promotion",
+            description = "Thay đổi trạng thái giảm giá ID #{#id} thành: #{#active ? 'Hoạt động' : 'Tạm ngưng'}")
     public void toggleActive(Long id, Boolean active) {
 
         Promotion promotion = promotionRepository.findById(id)
                 .orElseThrow(() -> new EntityNotFoundException("Promotion not found"));
 
-        // Không cho bật nếu đã hết hạn
         if (Boolean.TRUE.equals(active)
                 && promotion.getEndTime().isBefore(LocalDateTime.now())) {
             throw new RuntimeException("Khuyến mãi đã hết hạn");
@@ -149,6 +156,8 @@ public class PromotionService {
 
     // ================= DELETE =================
 
+    @AuditAction(module = "PRICING", action = "DELETE", entity = "Promotion",
+            description = "Đã xóa đợt giảm giá ID #{#id} khỏi hệ thống")
     public void delete(Long id) {
 
         Promotion promotion = promotionRepository.findById(id)
@@ -180,7 +189,6 @@ public class PromotionService {
             throw new RuntimeException("Giá trị giảm giá không hợp lệ");
         }
 
-        // ===== VALIDATE THEO TYPE =====
         switch (r.getDiscountType()) {
 
             case PERCENT -> {
@@ -245,6 +253,7 @@ public class PromotionService {
             throw new RuntimeException("Không thể tạo khuyến mãi trong quá khứ");
         }
     }
+
     public boolean checkName(String name){
         return promotionRepository.existsByNameIgnoreCase(name);
     }

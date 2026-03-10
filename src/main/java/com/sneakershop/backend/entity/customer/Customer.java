@@ -39,6 +39,12 @@ public class Customer {
     @Column(name = "ghi_chu", columnDefinition = "TEXT")
     private String ghiChu;
 
+    @Column(name = "uu_dai_theo_diem")
+    private Integer uuDaiTheoDiem = 0;
+
+    @Column(name = "uu_dai_theo_nhom")
+    private Integer uuDaiTheoNhom = 0;
+
     @PrePersist
     protected void onCreate() {
         this.createdAt = LocalDateTime.now();
