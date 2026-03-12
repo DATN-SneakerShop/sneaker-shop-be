@@ -13,6 +13,9 @@ public class ProductVariantResponse {
     private String sizeType;
     private String colorway;
 
+    // 🔥 CỔNG CHÍNH: Nhả link ảnh riêng của biến thể về cho Frontend
+    private String imageUrl;
+
     private BigDecimal price;
     private BigDecimal salePrice;
 

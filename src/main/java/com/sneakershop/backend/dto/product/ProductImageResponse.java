@@ -6,6 +6,6 @@ import lombok.Data;
 public class ProductImageResponse {
 
     private Long id;
-    private String Url;
+    private String url;
     private boolean isThumbnail;
 }

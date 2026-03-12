@@ -15,7 +15,7 @@ import java.util.Optional;
 public interface ProductPriceRepository extends JpaRepository<ProductPrice, Long> {
 
     /**
-     * 🔥 Bảng giá hiện tại (giá đang active)
+     * 🔥 Bảng giá hiện tại (giá đang active) - Đã chặn sản phẩm bị xóa
      */
     @Query("""
     SELECT new com.sneakershop.backend.dto.pricing.PriceBoardDTO(
@@ -26,6 +26,7 @@ public interface ProductPriceRepository extends JpaRepository<ProductPrice, Long
     LEFT JOIN ProductPrice pp
         ON pp.variant = v AND pp.endDate IS NULL
     LEFT JOIN pp.currency c
+    WHERE p.deleted = false OR p.deleted IS NULL
     ORDER BY v.id DESC
 """)
     List<PriceBoardDTO> getCurrentPriceBoard();

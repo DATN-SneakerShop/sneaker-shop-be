@@ -3,7 +3,9 @@ package com.sneakershop.backend.entity.product;
 import com.fasterxml.jackson.annotation.JsonManagedReference;
 import lombok.Getter;
 import lombok.Setter;
-
+import org.hibernate.annotations.SQLDelete;
+import org.hibernate.annotations.UpdateTimestamp;
+import org.hibernate.annotations.Where;
 import javax.persistence.*;
 import java.time.LocalDateTime;
 import java.util.List;
@@ -12,6 +14,8 @@ import java.util.List;
 @Getter
 @Setter
 @Table(name = "product")
+@SQLDelete(sql = "UPDATE product SET deleted = true WHERE id = ?")
+@Where(clause = "deleted = false")
 public class Product {
 
 
@@ -75,4 +79,16 @@ public class Product {
     private List<ProductImage> images;
     @Column(name = "created_at")
     private LocalDateTime createdAt;
+    @ManyToMany
+    @JoinTable(
+            name = "product_tag_mapping",
+            joinColumns = @JoinColumn(name = "product_id"),
+            inverseJoinColumns = @JoinColumn(name = "tag_id")
+    )
+    private List<ProductTag> tags;
+    @Column(name = "deleted")
+    private Boolean deleted = false;
+    @UpdateTimestamp
+    @Column(name = "updated_at")
+    private LocalDateTime updatedAt;
 }

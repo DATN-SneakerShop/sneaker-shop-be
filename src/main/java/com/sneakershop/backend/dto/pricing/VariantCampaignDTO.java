@@ -5,17 +5,13 @@ import java.math.BigDecimal;
 
 @Data
 public class VariantCampaignDTO {
-
     private Long id;
-
     private String sku;
-
     private String colorway;
-
     private String size;
-
     private BigDecimal price;
+    private int stock;
 
-    private Integer stock;
-
+    // 🔥 THÊM DÒNG NÀY ĐỂ MỞ CỔNG NHẬN ẢNH
+    private String imageUrl;
 }

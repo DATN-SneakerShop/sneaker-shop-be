@@ -45,6 +45,10 @@ public class PriceCampaignController {
                         vd.setSku(v.getSku());
                         vd.setColorway(v.getColorway());
                         vd.setSize(v.getSize());
+
+                        // 🔥 ĐÃ THÔNG ỐNG: Truyền link ảnh biến thể xuống cho FE
+                        vd.setImageUrl(v.getImageUrl());
+
                         BigDecimal price = productPriceRepository
                                 .findFirstByVariantIdAndEndDateIsNull(v.getId())
                                 .map(ProductPrice::getPrice)

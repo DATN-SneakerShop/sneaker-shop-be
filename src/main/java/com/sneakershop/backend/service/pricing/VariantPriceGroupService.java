@@ -14,10 +14,12 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.data.domain.Sort;
 import org.springframework.stereotype.Service;
 
+import javax.persistence.EntityNotFoundException;
 import javax.transaction.Transactional;
 import java.math.BigDecimal;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import java.util.Optional;
 import java.util.stream.Collectors;
 
@@ -102,84 +104,94 @@ public class VariantPriceGroupService {
                         ));
 
         return variants.stream().map(variant -> {
+            try {
+                // 🔥 FIX LỖI 400 & EntityNotFound:
+                // Nếu không có product hoặc product đã bị xóa mềm -> Bỏ qua luôn variant này
+                if (variant.getProduct() == null || Boolean.TRUE.equals(variant.getProduct().getDeleted())) {
+                    return null;
+                }
 
-            BigDecimal basePrice =
-                    productPriceRepository
-                            .findActivePrice(variant.getId())
-                            .map(ProductPrice::getPrice)
-                            .orElse(variant.getPrice());
+                BigDecimal basePrice =
+                        productPriceRepository
+                                .findActivePrice(variant.getId())
+                                .map(ProductPrice::getPrice)
+                                .orElse(variant.getPrice());
 
-            List<String> customerTypes = List.of("VIP", "THUONG");
+                List<String> customerTypes = List.of("VIP", "THUONG");
 
-            List<GroupPriceDTO> groups = customerTypes.stream()
-                    .map(type -> {
+                List<GroupPriceDTO> groups = customerTypes.stream()
+                        .map(type -> {
 
-                        VariantPriceGroup group =
-                                groupMap.getOrDefault(variant.getId(), List.of())
-                                        .stream()
-                                        .filter(g -> g.getLoaiKhach().equalsIgnoreCase(type))
-                                        .findFirst()
-                                        .orElse(null);
+                            VariantPriceGroup group =
+                                    groupMap.getOrDefault(variant.getId(), List.of())
+                                            .stream()
+                                            .filter(g -> g.getLoaiKhach().equalsIgnoreCase(type))
+                                            .findFirst()
+                                            .orElse(null);
 
-                        BigDecimal price =
-                                group != null
-                                        ? group.getPrice()
-                                        : basePrice;
+                            BigDecimal price =
+                                    group != null
+                                            ? group.getPrice()
+                                            : basePrice;
 
-                        BigDecimal finalPrice =
-                                pricingCalculationService.calculateFinalPrice(
-                                        variant.getId(),
-                                        type
-                                );
+                            BigDecimal finalPrice =
+                                    pricingCalculationService.calculateFinalPrice(
+                                            variant.getId(),
+                                            type
+                                    );
 
-                        return new GroupPriceDTO(
-                                type,
-                                price,
-                                finalPrice,
-                                null,
-                                null
-                        );
+                            return new GroupPriceDTO(
+                                    type,
+                                    price,
+                                    finalPrice,
+                                    null,
+                                    null
+                            );
 
-                    })
-                    .toList();
+                        })
+                        .toList();
 
-            List<PromotionDTO> promotions = variant.getPromotions()
-                    .stream()
-                    .map(p -> {
-                        PromotionDTO dto = new PromotionDTO();
+                List<PromotionDTO> promotions = variant.getPromotions()
+                        .stream()
+                        .map(p -> {
+                            PromotionDTO dto = new PromotionDTO();
 
-                        dto.setId(p.getId());
-                        dto.setName(p.getName());
-                        dto.setCode(p.getCode());
-                        dto.setDiscountType(p.getDiscountType());
-                        dto.setDiscountValue(p.getDiscountValue());
-                        dto.setPriority(p.getPriority());
-                        dto.setStartTime(p.getStartTime());
-                        dto.setEndTime(p.getEndTime());
-                        dto.setActive(p.getActive());
+                            dto.setId(p.getId());
+                            dto.setName(p.getName());
+                            dto.setCode(p.getCode());
+                            dto.setDiscountType(p.getDiscountType());
+                            dto.setDiscountValue(p.getDiscountValue());
+                            dto.setPriority(p.getPriority());
+                            dto.setStartTime(p.getStartTime());
+                            dto.setEndTime(p.getEndTime());
+                            dto.setActive(p.getActive());
 
-                        return dto;
-                    })
-                    .toList();
+                            return dto;
+                        })
+                        .toList();
 
-            return new PriceGroupResponse(
-                    variant.getId(),
-                    variant.getProduct().getName(),
-                    variant.getProduct().getSku(),
-                    variant.getSku(),
-                    variant.getColorway(),
-                    variant.getSize(),
-                    variant.getProduct().getThumbnail(),
-                    variant.getProduct().getBrand(),
-                    variant.getProduct().getGender(),
-                    variant.getProduct().getMaterial(),
-                    variant.getProduct().getModel(),
-                    variant.getProduct().getReleaseYear(),
-                    variant.getProduct().getDescription(),
-                    basePrice,
-                    groups,
-                    promotions
-            );
-        }).toList();
+                return new PriceGroupResponse(
+                        variant.getId(),
+                        variant.getProduct().getName(),
+                        variant.getProduct().getSku(),
+                        variant.getSku(),
+                        variant.getColorway(),
+                        variant.getSize(),
+                        variant.getProduct().getThumbnail(),
+                        variant.getProduct().getBrand(),
+                        variant.getProduct().getGender(),
+                        variant.getProduct().getMaterial(),
+                        variant.getProduct().getModel(),
+                        variant.getProduct().getReleaseYear(),
+                        variant.getProduct().getDescription(),
+                        basePrice,
+                        groups,
+                        promotions
+                );
+            } catch (EntityNotFoundException e) {
+                // 🔥 Bắt chặt lỗi Proxy của Hibernate văng ra nếu Product bị giấu
+                return null;
+            }
+        }).filter(Objects::nonNull).toList(); // 🔥 Lọc sạch các phần tử null ra khỏi danh sách
     }
 }
