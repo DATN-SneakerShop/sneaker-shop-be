@@ -9,10 +9,13 @@ import com.sneakershop.backend.entity.order.enums.OrderStatus;
 import com.sneakershop.backend.entity.order.enums.ReturnStatus;
 import com.sneakershop.backend.entity.order.enums.SalesChannel;
 import com.sneakershop.backend.entity.product.ProductVariant;
+import com.sneakershop.backend.repository.login.UserRepository;
 import com.sneakershop.backend.repository.order.OrderRepository;
 import com.sneakershop.backend.repository.product.ProductVariantRepository;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
+import org.springframework.security.core.Authentication;
+import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.server.ResponseStatusException;
@@ -27,10 +30,6 @@ import java.time.LocalDateTime;
 import java.time.temporal.WeekFields;
 import java.util.*;
 import java.util.stream.Collectors;
-
-import com.sneakershop.backend.repository.login.UserRepository;
-import org.springframework.security.core.Authentication;
-import org.springframework.security.core.context.SecurityContextHolder;
 
 @Service
 @RequiredArgsConstructor
@@ -58,6 +57,7 @@ public class OrderService {
     private int nzInt(Integer v) {
         return v == null ? 0 : v;
     }
+
     private User getCurrentUserOrNull() {
         try {
             Authentication authentication = SecurityContextHolder.getContext().getAuthentication();
@@ -112,8 +112,10 @@ public class OrderService {
 
     private void assertEditable(Order order) {
         if (order.getOrderStatus() != OrderStatus.NEW && order.getOrderStatus() != OrderStatus.PROCESSING) {
-            throw new ResponseStatusException(HttpStatus.BAD_REQUEST,
-                    "Order is not editable in status: " + order.getOrderStatus());
+            throw new ResponseStatusException(
+                    HttpStatus.BAD_REQUEST,
+                    "Order is not editable in status: " + order.getOrderStatus()
+            );
         }
     }
 
@@ -128,8 +130,10 @@ public class OrderService {
 
     private void assertReturnable(Order order) {
         if (order.getOrderStatus() != OrderStatus.SHIPPING && order.getOrderStatus() != OrderStatus.COMPLETED) {
-            throw new ResponseStatusException(HttpStatus.BAD_REQUEST,
-                    "Order is not returnable in status: " + order.getOrderStatus());
+            throw new ResponseStatusException(
+                    HttpStatus.BAD_REQUEST,
+                    "Order is not returnable in status: " + order.getOrderStatus()
+            );
         }
     }
 
@@ -138,8 +142,10 @@ public class OrderService {
         ProductVariant variant = getVariantOr404(variantId);
         int current = variant.getStock();
         if (current < qty) {
-            throw new ResponseStatusException(HttpStatus.BAD_REQUEST,
-                    "Variant " + variantId + " does not have enough stock. Current stock = " + current + ", required = " + qty);
+            throw new ResponseStatusException(
+                    HttpStatus.BAD_REQUEST,
+                    "Variant " + variantId + " does not have enough stock. Current stock = " + current + ", required = " + qty
+            );
         }
         variant.setStock(current - qty);
         productVariantRepository.save(variant);
@@ -150,6 +156,45 @@ public class OrderService {
         ProductVariant variant = getVariantOr404(variantId);
         variant.setStock(variant.getStock() + qty);
         productVariantRepository.save(variant);
+    }
+
+    private void assertEnoughStockForCompletion(Order order) {
+        for (OrderItem it : defaultItems(order)) {
+            if (it.getVariantId() == null) {
+                throw new ResponseStatusException(
+                        HttpStatus.BAD_REQUEST,
+                        "Order item is missing variantId: " + it.getId()
+                );
+            }
+
+            int qty = nzInt(it.getQuantity());
+            if (qty <= 0) {
+                throw new ResponseStatusException(
+                        HttpStatus.BAD_REQUEST,
+                        "Invalid quantity for item: " + it.getId()
+                );
+            }
+
+            ProductVariant variant = getVariantOr404(it.getVariantId());
+            int currentStock = variant.getStock();
+
+            if (currentStock < qty) {
+                throw new ResponseStatusException(
+                        HttpStatus.BAD_REQUEST,
+                        "Không đủ tồn kho cho sản phẩm "
+                                + (it.getProductNameSnapshot() != null ? it.getProductNameSnapshot() : ("Variant#" + it.getVariantId()))
+                                + ". Tồn hiện tại = " + currentStock + ", cần = " + qty
+                );
+            }
+        }
+    }
+
+    private void decreaseStockForOrder(Order order) {
+        for (OrderItem it : defaultItems(order)) {
+            if (it.getVariantId() != null) {
+                decreaseStock(it.getVariantId(), nzInt(it.getQuantity()));
+            }
+        }
     }
 
     private BigDecimal resolveDefaultUnitPrice(ProductVariant variant) {
@@ -269,7 +314,6 @@ public class OrderService {
             validateQuantity(ir.getQuantity());
 
             ProductVariant variant = getVariantOr404(ir.getVariantId());
-            decreaseStock(variant.getId(), ir.getQuantity());
 
             OrderItem it = new OrderItem();
             it.setOrder(order);
@@ -328,14 +372,17 @@ public class OrderService {
     @Transactional(readOnly = true)
     public List<OrderSummaryDTO> listByCustomer(Long customerId) {
         return orderRepo.findAllByCustomer_IdAndDeletedFalseOrderByCreatedAtDesc(customerId)
-                .stream().map(this::toSummaryDTO).collect(Collectors.toList());
+                .stream()
+                .map(this::toSummaryDTO)
+                .collect(Collectors.toList());
     }
-
 
     @Transactional(readOnly = true)
     public List<OrderSummaryDTO> listByStaff(Long createdById) {
         return orderRepo.findAllByCreatedBy_IdAndDeletedFalseOrderByCreatedAtDesc(createdById)
-                .stream().map(this::toSummaryDTO).collect(Collectors.toList());
+                .stream()
+                .map(this::toSummaryDTO)
+                .collect(Collectors.toList());
     }
 
     @Transactional(readOnly = true)
@@ -351,7 +398,13 @@ public class OrderService {
         if (req.getChannel() != null) order.setChannel(req.getChannel());
         if (req.getPaymentMethod() != null) order.setPaymentMethod(req.getPaymentMethod());
         if (req.getPaymentStatus() != null) order.setPaymentStatus(req.getPaymentStatus());
-        if (req.getShippingFee() != null) order.setShippingFee(nz(req.getShippingFee()));
+
+        if (req.getChannel() == SalesChannel.OFFLINE) {
+            order.setShippingFee(BigDecimal.ZERO);
+        } else if (req.getShippingFee() != null) {
+            order.setShippingFee(nz(req.getShippingFee()));
+        }
+
         if (req.getDiscountAmount() != null) order.setDiscountAmount(nz(req.getDiscountAmount()));
         if (req.getNote() != null) order.setNote(req.getNote());
 
@@ -370,15 +423,6 @@ public class OrderService {
 
         if (req.getCancelledById() != null) {
             order.setCancelledBy(em.getReference(User.class, req.getCancelledById()));
-        }
-
-        for (OrderItem it : defaultItems(order)) {
-            int soldQty = nzInt(it.getQuantity());
-            int returnedQty = nzInt(it.getReturnedQuantity());
-            int needRestore = soldQty - returnedQty;
-            if (needRestore > 0 && it.getVariantId() != null) {
-                increaseStock(it.getVariantId(), needRestore);
-            }
         }
 
         return toDetailDTO(orderRepo.save(order));
@@ -408,11 +452,20 @@ public class OrderService {
                                 next == OrderStatus.COMPLETED);
 
         if (!valid) {
-            throw new ResponseStatusException(HttpStatus.BAD_REQUEST,
-                    "Invalid status transition from " + current + " to " + next);
+            throw new ResponseStatusException(
+                    HttpStatus.BAD_REQUEST,
+                    "Invalid status transition from " + current + " to " + next
+            );
+        }
+
+        boolean completingNow = current != OrderStatus.COMPLETED && next == OrderStatus.COMPLETED;
+        if (completingNow) {
+            assertEnoughStockForCompletion(order);
+            decreaseStockForOrder(order);
         }
 
         order.setOrderStatus(next);
+
         if (next == OrderStatus.SHIPPING && order.getShippedAt() == null) {
             order.setShippedAt(LocalDateTime.now());
         }
@@ -441,7 +494,6 @@ public class OrderService {
             validateQuantity(ir.getQuantity());
 
             ProductVariant variant = getVariantOr404(ir.getVariantId());
-            decreaseStock(variant.getId(), ir.getQuantity());
 
             OrderItem it = new OrderItem();
             it.setOrder(order);
@@ -472,17 +524,7 @@ public class OrderService {
 
         validateQuantity(req.getQuantity());
 
-        int oldQty = nzInt(item.getQuantity());
-        int newQty = req.getQuantity();
-        int delta = newQty - oldQty;
-
-        if (delta > 0) {
-            decreaseStock(item.getVariantId(), delta);
-        } else if (delta < 0) {
-            increaseStock(item.getVariantId(), Math.abs(delta));
-        }
-
-        item.setQuantity(newQty);
+        item.setQuantity(req.getQuantity());
         calcLine(item);
         recalcOrderTotals(order);
 
@@ -493,6 +535,9 @@ public class OrderService {
     public OrderDetailDTO applyReturn(Long orderId, ReturnOrderRequest req) {
         Order order = getOrderOr404(orderId);
         assertReturnable(order);
+
+        OrderStatus originalOrderStatus = order.getOrderStatus();
+        ReturnStatus previousReturnStatus = order.getReturnStatus();
 
         order.setReturnStatus(req.getReturnStatus());
         order.setReturnNote(req.getReturnNote());
@@ -506,19 +551,28 @@ public class OrderService {
                 ReturnItemRequest r = map.get(it.getId());
                 if (r == null) continue;
 
-                int oldReturned = nzInt(it.getReturnedQuantity());
                 int newReturned = Math.max(0, r.getReturnedQuantity());
                 int maxQty = nzInt(it.getQuantity());
                 if (newReturned > maxQty) newReturned = maxQty;
 
-                int deltaReturned = newReturned - oldReturned;
-                if (deltaReturned > 0 && it.getVariantId() != null) {
-                    increaseStock(it.getVariantId(), deltaReturned);
-                }
-
                 it.setReturnedQuantity(newReturned);
                 it.setReturnNote(r.getReturnNote());
                 it.setReturnedAt(LocalDateTime.now());
+            }
+        }
+
+        // Chỉ hoàn kho khi chuyển sang trạng thái trả hàng hoàn tất
+        boolean completingReturnNow =
+                req.getReturnStatus() == ReturnStatus.COMPLETED &&
+                        previousReturnStatus != ReturnStatus.COMPLETED &&
+                        originalOrderStatus == OrderStatus.COMPLETED;
+
+        if (completingReturnNow) {
+            for (OrderItem it : defaultItems(order)) {
+                int returnedQty = nzInt(it.getReturnedQuantity());
+                if (returnedQty > 0 && it.getVariantId() != null) {
+                    increaseStock(it.getVariantId(), returnedQty);
+                }
             }
         }
 
