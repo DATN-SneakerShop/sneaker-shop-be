@@ -1,17 +1,22 @@
 package com.sneakershop.backend.controller.order;
 
-import com.sneakershop.backend.dto.customer.CustomerSpendingDTO;
-import com.sneakershop.backend.dto.customer.InactiveCustomerDTO;
 import com.sneakershop.backend.dto.order.*;
 import com.sneakershop.backend.entity.order.enums.OrderStatus;
 import com.sneakershop.backend.entity.order.enums.ReturnStatus;
+import com.sneakershop.backend.entity.order.enums.SalesChannel;
 import com.sneakershop.backend.service.order.OrderService;
 import lombok.RequiredArgsConstructor;
+import org.springframework.format.annotation.DateTimeFormat;
+import org.springframework.http.ContentDisposition;
+import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
+import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
 import javax.validation.Valid;
+import java.nio.charset.StandardCharsets;
+import java.time.LocalDate;
 import java.util.List;
 import java.util.Optional;
 
@@ -29,18 +34,42 @@ public class OrderController {
 
     @GetMapping
     public ResponseEntity<List<OrderSummaryDTO>> list(
-            @RequestParam(name = "status", required = false) OrderStatus status
+            @RequestParam(name = "status", required = false) OrderStatus status,
+            @RequestParam(name = "channel", required = false) SalesChannel channel,
+            @RequestParam(name = "customerId", required = false) Long customerId,
+            @RequestParam(name = "createdById", required = false) Long createdById,
+            @RequestParam(name = "dateFrom", required = false)
+            @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate dateFrom,
+            @RequestParam(name = "dateTo", required = false)
+            @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate dateTo,
+            @RequestParam(name = "keyword", required = false) String keyword
     ) {
-        return ResponseEntity.ok(orderService.list(Optional.ofNullable(status)));
+        return ResponseEntity.ok(
+                orderService.list(
+                        Optional.ofNullable(status),
+                        Optional.ofNullable(channel),
+                        Optional.ofNullable(customerId),
+                        Optional.ofNullable(createdById),
+                        Optional.ofNullable(dateFrom),
+                        Optional.ofNullable(dateTo),
+                        Optional.ofNullable(keyword)
+                )
+        );
     }
 
-    // Checklist: hiển thị đơn hàng theo khách hàng
+    @GetMapping("/by-date")
+    public ResponseEntity<List<OrderSummaryDTO>> listByDate(
+            @RequestParam("date")
+            @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate date
+    ) {
+        return ResponseEntity.ok(orderService.listByDate(date));
+    }
+
     @GetMapping("/by-customer/{customerId}")
     public ResponseEntity<List<OrderSummaryDTO>> listByCustomer(@PathVariable Long customerId) {
         return ResponseEntity.ok(orderService.listByCustomer(customerId));
     }
 
-    // Checklist: hiển thị đơn hàng theo nhân viên bán
     @GetMapping("/by-staff/{createdById}")
     public ResponseEntity<List<OrderSummaryDTO>> listByStaff(@PathVariable Long createdById) {
         return ResponseEntity.ok(orderService.listByStaff(createdById));
@@ -61,7 +90,6 @@ public class OrderController {
         return ResponseEntity.ok(orderService.cancel(id, req));
     }
 
-    // Checklist: thêm trạng thái "Đang giao" / "Hoàn tất giao hàng"
     @PatchMapping("/{id}/status")
     public ResponseEntity<OrderDetailDTO> updateStatus(@PathVariable Long id, @Valid @RequestBody UpdateOrderStatusRequest req) {
         return ResponseEntity.ok(orderService.updateStatus(id, req));
@@ -92,7 +120,6 @@ public class OrderController {
         return ResponseEntity.ok(orderService.applyReturn(id, req));
     }
 
-    // Checklist: báo cáo đơn hàng hoàn trả
     @GetMapping("/returns/report")
     public ResponseEntity<List<ReturnReportDTO>> returnReport(
             @RequestParam(name = "status", required = false) ReturnStatus status
@@ -100,59 +127,121 @@ public class OrderController {
         return ResponseEntity.ok(orderService.returnReport(Optional.ofNullable(status)));
     }
 
-    // Checklist: tạo tính năng in đơn hàng PDF (trả HTML để trình duyệt Print -> Save PDF)
+    @GetMapping("/stats/by-staff")
+    public ResponseEntity<List<StaffOrderStatisticDTO>> statsByStaff() {
+        return ResponseEntity.ok(orderService.statsByStaff());
+    }
+
+    @GetMapping("/stats/revenue/by-customer")
+    public ResponseEntity<List<CustomerRevenueDTO>> revenueByCustomer() {
+        return ResponseEntity.ok(orderService.revenueByCustomer());
+    }
+
+    @GetMapping("/stats/revenue/daily")
+    public ResponseEntity<List<DailyRevenueDTO>> revenueDaily(
+            @RequestParam(name = "dateFrom", required = false)
+            @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate dateFrom,
+            @RequestParam(name = "dateTo", required = false)
+            @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate dateTo
+    ) {
+        return ResponseEntity.ok(orderService.revenueDaily(dateFrom, dateTo));
+    }
+
+    @GetMapping("/stats/revenue/weekly")
+    public ResponseEntity<List<WeeklyRevenueDTO>> revenueWeekly(
+            @RequestParam(name = "dateFrom", required = false)
+            @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate dateFrom,
+            @RequestParam(name = "dateTo", required = false)
+            @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate dateTo
+    ) {
+        return ResponseEntity.ok(orderService.revenueWeekly(dateFrom, dateTo));
+    }
+
+    @GetMapping("/stats/revenue/monthly")
+    public ResponseEntity<List<MonthlyRevenueDTO>> revenueMonthly(
+            @RequestParam(name = "dateFrom", required = false)
+            @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate dateFrom,
+            @RequestParam(name = "dateTo", required = false)
+            @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate dateTo
+    ) {
+        return ResponseEntity.ok(orderService.revenueMonthly(dateFrom, dateTo));
+    }
+
+    @GetMapping("/stats/top-products")
+    public ResponseEntity<List<BestSellingProductDTO>> bestSellingProducts() {
+        return ResponseEntity.ok(orderService.bestSellingProducts());
+    }
+
+    @GetMapping("/stats/returned-products")
+    public ResponseEntity<List<ReturnedProductStatisticDTO>> returnedProducts() {
+        return ResponseEntity.ok(orderService.returnedProducts());
+    }
+
+    @GetMapping("/dashboard")
+    public ResponseEntity<OrderDashboardDTO> dashboard() {
+        return ResponseEntity.ok(orderService.dashboard());
+    }
+
     @GetMapping(value = "/{id}/print", produces = "text/html; charset=UTF-8")
     public ResponseEntity<String> printHtml(@PathVariable Long id) {
-        OrderDetailDTO dto = orderService.detail(id);
-
-        StringBuilder html = new StringBuilder();
-        html.append("<html><head><meta charset='UTF-8'/>")
-            .append("<style>body{font-family:Arial} table{border-collapse:collapse;width:100%} td,th{border:1px solid #ccc;padding:6px}</style>")
-            .append("</head><body>")
-            .append("<h2>Hóa đơn: ").append(dto.getOrderCode()).append("</h2>")
-            .append("<p>Status: ").append(dto.getOrderStatus())
-            .append(" | Payment: ").append(dto.getPaymentMethod())
-            .append(" | Revenue: ").append(dto.getRevenue())
-            .append("</p>")
-            .append("<table><thead><tr><th>Sản phẩm</th><th>SL</th><th>Đơn giá</th><th>Thành tiền</th></tr></thead><tbody>");
-
-        if (dto.getItems() != null) {
-            for (OrderItemDTO it : dto.getItems()) {
-                String name = it.getProductNameSnapshot() != null ? it.getProductNameSnapshot() : ("Variant#" + it.getVariantId());
-                html.append("<tr><td>").append(name).append("</td>")
-                    .append("<td>").append(it.getQuantity()).append("</td>")
-                    .append("<td>").append(it.getUnitPrice()).append("</td>")
-                    .append("<td>").append(it.getLineTotalAmount()).append("</td></tr>");
-            }
-        }
-
-        html.append("</tbody></table>")
-            .append("<p>Subtotal: ").append(dto.getSubtotalAmount()).append("</p>")
-            .append("<p>Discount: ").append(dto.getDiscountAmount()).append("</p>")
-            .append("<p>Shipping: ").append(dto.getShippingFee()).append("</p>")
-            .append("<p><b>Total: ").append(dto.getTotalAmount()).append("</b></p>")
-            .append("<p>Returned: ").append(dto.getReturnedAmount()).append("</p>")
-            .append("<p><b>Final: ").append(dto.getFinalAmount()).append("</b></p>")
-            .append("</body></html>");
-
-        return ResponseEntity.ok(html.toString());
+        return ResponseEntity.ok(orderService.buildPrintHtml(id));
     }
 
-    // Chi tiêu khách hàng
-    @GetMapping("/customer-spending")
-    public ResponseEntity<List<CustomerSpendingDTO>> customerSpending(){
-        return ResponseEntity.ok(orderService.getCustomerSpending());
+    @GetMapping(value = "/{id}/export-pdf", produces = MediaType.APPLICATION_PDF_VALUE)
+    public ResponseEntity<byte[]> exportOrderPdf(@PathVariable Long id) {
+        byte[] pdf = orderService.exportSingleOrderPdf(id);
+
+        HttpHeaders headers = new HttpHeaders();
+        headers.setContentType(MediaType.APPLICATION_PDF);
+        headers.setContentDisposition(
+                ContentDisposition.attachment()
+                        .filename("order-" + id + ".pdf", StandardCharsets.UTF_8)
+                        .build()
+        );
+
+        return new ResponseEntity<>(pdf, headers, HttpStatus.OK);
     }
 
-    // Top khách hàng
-    @GetMapping("/top-customers")
-    public ResponseEntity<List<CustomerSpendingDTO>> topCustomers(){
-        return ResponseEntity.ok(orderService.getTopCustomers());
+    @GetMapping(value = "/export-pdf", produces = MediaType.APPLICATION_PDF_VALUE)
+    public ResponseEntity<byte[]> exportOrdersPdf(
+            @RequestParam(name = "status", required = false) OrderStatus status,
+            @RequestParam(name = "channel", required = false) SalesChannel channel,
+            @RequestParam(name = "customerId", required = false) Long customerId,
+            @RequestParam(name = "createdById", required = false) Long createdById,
+            @RequestParam(name = "dateFrom", required = false)
+            @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate dateFrom,
+            @RequestParam(name = "dateTo", required = false)
+            @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate dateTo,
+            @RequestParam(name = "keyword", required = false) String keyword
+    ) {
+        byte[] pdf = orderService.exportOrdersPdf(
+                Optional.ofNullable(status),
+                Optional.ofNullable(channel),
+                Optional.ofNullable(customerId),
+                Optional.ofNullable(createdById),
+                Optional.ofNullable(dateFrom),
+                Optional.ofNullable(dateTo),
+                Optional.ofNullable(keyword)
+        );
+
+        HttpHeaders headers = new HttpHeaders();
+        headers.setContentType(MediaType.APPLICATION_PDF);
+        headers.setContentDisposition(
+                ContentDisposition.attachment()
+                        .filename("orders-report.pdf", StandardCharsets.UTF_8)
+                        .build()
+        );
+
+        return new ResponseEntity<>(pdf, headers, HttpStatus.OK);
     }
 
-    // Khách hàng lâu chưa hoạt động (đang fix)
-    @GetMapping("/inactive-customers")
-    public List<InactiveCustomerDTO> getInactiveCustomers() {
-        return orderService.getInactiveCustomers();
+    @GetMapping("/{id}/email-preview")
+    public ResponseEntity<OrderEmailPreviewDTO> emailPreview(@PathVariable Long id) {
+        return ResponseEntity.ok(orderService.emailPreview(id));
+    }
+
+    @PostMapping("/{id}/send-confirmation-email")
+    public ResponseEntity<OrderEmailPreviewDTO> sendConfirmationEmail(@PathVariable Long id) {
+        return ResponseEntity.ok(orderService.markEmailSent(id));
     }
 }

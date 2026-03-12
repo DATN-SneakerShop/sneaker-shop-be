@@ -1,6 +1,10 @@
 package com.sneakershop.backend.dto.order;
 
-import com.sneakershop.backend.entity.order.enums.*;
+import com.sneakershop.backend.entity.order.enums.OrderStatus;
+import com.sneakershop.backend.entity.order.enums.PaymentMethod;
+import com.sneakershop.backend.entity.order.enums.PaymentStatus;
+import com.sneakershop.backend.entity.order.enums.ReturnStatus;
+import com.sneakershop.backend.entity.order.enums.SalesChannel;
 import lombok.Data;
 
 import java.math.BigDecimal;
@@ -27,8 +31,6 @@ public class OrderDetailDTO {
     private BigDecimal totalAmount;
     private BigDecimal returnedAmount;
     private BigDecimal finalAmount;
-
-    // Checklist: tính tổng doanh thu từng đơn
     private BigDecimal revenue;
 
     private String note;
@@ -36,6 +38,13 @@ public class OrderDetailDTO {
 
     private LocalDateTime createdAt;
     private LocalDateTime updatedAt;
+    private LocalDateTime shippedAt;
+    private LocalDateTime completedAt;
+    private LocalDateTime cancelledAt;
+    private LocalDateTime returnedAt;
+
+    private Boolean emailSent;
+    private LocalDateTime emailSentAt;
 
     private List<OrderItemDTO> items;
 }

@@ -6,7 +6,8 @@ import javax.validation.constraints.NotBlank;
 
 @Data
 public class CancelOrderRequest {
-    @NotBlank
+    @NotBlank(message = "Reason must not be blank")
     private String reason;
-    private Long cancelledById; // optional
+
+    private Long cancelledById;
 }
