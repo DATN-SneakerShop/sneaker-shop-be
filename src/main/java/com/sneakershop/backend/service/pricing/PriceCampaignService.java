@@ -1,5 +1,6 @@
 package com.sneakershop.backend.service.pricing;
 
+import com.sneakershop.backend.audit.AuditAction;
 import com.sneakershop.backend.dto.pricing.*;
 import com.sneakershop.backend.entity.pricing.PriceCampaign;
 import com.sneakershop.backend.entity.pricing.PriceCampaignItem;
@@ -30,6 +31,8 @@ public class PriceCampaignService {
 
     /* ================= CREATE CAMPAIGN ================= */
 
+    @AuditAction(module = "PRICING", action = "CREATE", entity = "PriceCampaign",
+            description = "Đã tạo chiến dịch giá mới: #{#request.name}")
     public CampaignResponse createCampaign(CreateCampaignRequest request) {
 
         PriceCampaign campaign = new PriceCampaign();
@@ -64,6 +67,8 @@ public class PriceCampaignService {
 
     /* ================= ADD VARIANT PRICE ================= */
 
+    @AuditAction(module = "PRICING", action = "ADD_PRICE", entity = "PriceCampaignItem",
+            description = "Đã thêm giá #{#price} cho Sản phẩm (Variant ID: #{#variantId}) vào chiến dịch ID #{#campaignId}")
     public void addVariantPrice(Long campaignId, Long variantId, BigDecimal price) {
 
         PriceCampaign campaign = campaignRepository.findById(campaignId)
@@ -146,7 +151,10 @@ public class PriceCampaignService {
 
         return res;
     }
+
     @Transactional
+    @AuditAction(module = "PRICING", action = "UPDATE", entity = "PriceCampaign",
+            description = "Đã cập nhật chiến dịch giá ID #{#id} thành tên: #{#request.name}")
     public CampaignResponse updateCampaign(Long id, UpdateCampaignRequest request) {
 
         PriceCampaign campaign = campaignRepository.findById(id)
@@ -190,6 +198,7 @@ public class PriceCampaignService {
 
         return mapResponse(campaign);
     }
+
     public List<PriceCampaign> getAllCampaign() {
         return campaignRepository.findAll();
     }
@@ -208,6 +217,7 @@ public class PriceCampaignService {
                 .min(BigDecimal::compareTo)
                 .orElse(null);
     }
+
     public BigDecimal getFinalPrice(Long variantId) {
 
         LocalDateTime now = LocalDateTime.now();
@@ -224,5 +234,4 @@ public class PriceCampaignService {
                 .map(ProductPrice::getPrice)
                 .orElse(BigDecimal.ZERO);
     }
-
 }

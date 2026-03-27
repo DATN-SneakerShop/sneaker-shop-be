@@ -1,5 +1,6 @@
 package com.sneakershop.backend.service.order;
 
+import com.sneakershop.backend.audit.AuditAction;
 import com.sneakershop.backend.dto.order.*;
 import com.sneakershop.backend.entity.customer.Customer;
 import com.sneakershop.backend.entity.login.User;
@@ -281,6 +282,7 @@ public class OrderService {
     }
 
     @Transactional
+    @AuditAction(module = "ORDER", action = "CREATE", entity = "Order", description = "Đã tạo đơn hàng mới. Kênh: #{#req.channel}, Thanh toán: #{#req.paymentMethod}")
     public OrderDetailDTO create(CreateOrderRequest req) {
         Order order = new Order();
         order.setOrderCode(generateOrderCode());
@@ -391,6 +393,7 @@ public class OrderService {
     }
 
     @Transactional
+    @AuditAction(module = "ORDER", action = "UPDATE", entity = "Order", description = "Đã cập nhật thông tin đơn hàng ID: #{#id}")
     public OrderDetailDTO update(Long id, UpdateOrderRequest req) {
         Order order = getOrderOr404(id);
         assertEditable(order);
@@ -413,6 +416,7 @@ public class OrderService {
     }
 
     @Transactional
+    @AuditAction(module = "ORDER", action = "CANCEL", entity = "Order", description = "Đã hủy đơn hàng ID: #{#id}. Lý do: #{#req.reason}")
     public OrderDetailDTO cancel(Long id, CancelOrderRequest req) {
         Order order = getOrderOr404(id);
         assertCancelable(order);
@@ -429,6 +433,7 @@ public class OrderService {
     }
 
     @Transactional
+    @AuditAction(module = "ORDER", action = "UPDATE", entity = "Order", description = "Đã cập nhật trạng thái đơn hàng ID: #{#id} sang #{#req.status}")
     public OrderDetailDTO updateStatus(Long id, UpdateOrderStatusRequest req) {
         Order order = getOrderOr404(id);
         OrderStatus current = order.getOrderStatus();
@@ -478,6 +483,7 @@ public class OrderService {
     }
 
     @Transactional
+    @AuditAction(module = "ORDER", action = "DELETE", entity = "Order", description = "Đã xóa (soft delete) đơn hàng ID: #{#id}")
     public void delete(Long id) {
         Order order = getOrderOr404(id);
         order.setDeleted(true);
@@ -486,6 +492,7 @@ public class OrderService {
     }
 
     @Transactional
+    @AuditAction(module = "ORDER", action = "UPDATE", entity = "Order", description = "Đã thêm sản phẩm vào đơn hàng ID: #{#orderId}")
     public OrderDetailDTO addItems(Long orderId, List<OrderItemCreateRequest> itemsReq) {
         Order order = getOrderOr404(orderId);
         assertEditable(order);
@@ -513,6 +520,7 @@ public class OrderService {
     }
 
     @Transactional
+    @AuditAction(module = "ORDER", action = "UPDATE", entity = "Order", description = "Đã cập nhật số lượng sản phẩm (Item ID: #{#itemId}) trong đơn hàng ID: #{#orderId}")
     public OrderDetailDTO updateItemQty(Long orderId, Long itemId, UpdateItemQuantityRequest req) {
         Order order = getOrderOr404(orderId);
         assertEditable(order);
@@ -532,6 +540,7 @@ public class OrderService {
     }
 
     @Transactional
+    @AuditAction(module = "ORDER", action = "RETURN", entity = "Order", description = "Đã xử lý trả hàng cho đơn ID: #{#orderId}. Trạng thái: #{#req.returnStatus}")
     public OrderDetailDTO applyReturn(Long orderId, ReturnOrderRequest req) {
         Order order = getOrderOr404(orderId);
         assertReturnable(order);

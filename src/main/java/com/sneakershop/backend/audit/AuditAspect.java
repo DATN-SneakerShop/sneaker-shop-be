@@ -49,12 +49,14 @@ public class AuditAspect {
             log.setAction(auditAction.action());
             log.setEntityName(auditAction.entity());
 
-            // 🔥 Dùng bộ dịch thông minh để tạo câu tiếng Việt chi tiết
             String summary = resolveDescription(jp, auditAction.description());
             log.setSummary(summary);
 
             log.setStatus(status);
             log.setErrorMessage(errorMessage);
+
+            // 🔥 MỚI THÊM: Tự động phân loại INFO nếu SUCCESS, và ERROR nếu FAILED
+            log.setLogLevel("SUCCESS".equals(status) ? "INFO" : "ERROR");
 
             auditLogRepository.save(log);
         } catch (Exception e) {
@@ -62,8 +64,6 @@ public class AuditAspect {
         }
     }
 
-    // 🔥 HÀM PHÉP THUẬT: Đọc tham số truyền vào để nội suy ra chuỗi
-    // Ví dụ: "Đã thêm sản phẩm: #{#request.name}" -> "Đã thêm sản phẩm: Giày Nike"
     private String resolveDescription(JoinPoint jp, String description) {
         if (description == null || !description.contains("#{")) {
             return description.isEmpty() ? jp.getSignature().toShortString() : description;
@@ -82,7 +82,7 @@ public class AuditAspect {
             }
             return parser.parseExpression(description, new TemplateParserContext()).getValue(context, String.class);
         } catch (Exception e) {
-            return description; // Nếu lỗi parse thì in ra chuỗi gốc
+            return description;
         }
     }
 }

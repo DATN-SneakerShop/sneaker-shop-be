@@ -13,7 +13,7 @@ public class SystemAuditLog {
     private Long id;
 
     @Column(length = 100, nullable = false)
-    private String username; // Tên user thao tác (lưu text để không bị lỗi khóa ngoại)
+    private String username;
 
     @Column(length = 45)
     private String ipAddress;
@@ -34,7 +34,11 @@ public class SystemAuditLog {
     private String status; // SUCCESS hoặc FAILED
 
     @Column(columnDefinition = "TEXT")
-    private String errorMessage; // Lưu nguyên nhân lỗi nếu có
+    private String errorMessage;
+
+    // 🔥 MỚI THÊM: Phân loại mức độ nghiêm trọng (INFO, WARNING, ERROR, DANGER)
+    @Column(length = 20)
+    private String logLevel = "INFO";
 
     @Column(updatable = false)
     private LocalDateTime createdAt;

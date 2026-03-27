@@ -1,5 +1,6 @@
 package com.sneakershop.backend.controller.login;
 
+import com.sneakershop.backend.audit.SystemAuditLogService;
 import com.sneakershop.backend.config.JwtTokenProvider;
 import com.sneakershop.backend.dto.login.LoginRequest;
 import com.sneakershop.backend.dto.login.UserRequest;
@@ -28,17 +29,44 @@ public class AuthController {
     private final JwtTokenProvider tokenProvider;
     private final PasswordEncoder passwordEncoder;
     private final AuthService authService;
+    private final SystemAuditLogService auditLogService;
 
     @PostMapping("/login")
-    public ResponseEntity<?> login(@RequestBody LoginRequest request) {
-        // Đăng nhập bằng Email (Trường username trong request giờ chứa Email)
-        User user = userRepository.findByEmail(request.getUsername())
-                .orElse(null);
+    public ResponseEntity<?> login(@RequestBody LoginRequest request, HttpServletRequest servletRequest) {
+        String ip = servletRequest.getRemoteAddr();
+        String attemptedEmail = request.getUsername() != null ? request.getUsername() : "UNKNOWN";
+
+        User user = userRepository.findByEmail(attemptedEmail).orElse(null);
 
         if (user == null || !passwordEncoder.matches(request.getPassword(), user.getPasswordHash())) {
+            auditLogService.logManual(
+                    attemptedEmail, ip, "SECURITY", "LOGIN_FAILED", "User",
+                    "Cảnh báo: Đăng nhập thất bại (Sai email hoặc mật khẩu)",
+                    "FAILED", "Sai thông tin đăng nhập", "WARNING"
+            );
             return ResponseEntity.status(401).body("Email hoặc mật khẩu không chính xác!");
         }
+
+        auditLogService.logManual(
+                user.getEmail(), ip, "AUTH", "LOGIN_SUCCESS", "User",
+                "Đăng nhập hệ thống thành công",
+                "SUCCESS", null, "INFO"
+        );
+
         return generateAuthResponse(user);
+    }
+
+    // 🔥 API MỚI: NHẬN TOKEN TỪ FRONTEND GỬI XUỐNG
+    @PostMapping("/google")
+    public ResponseEntity<?> googleLogin(@RequestBody Map<String, String> body, HttpServletRequest request) {
+        try {
+            String credential = body.get("credential");
+            User user = authService.loginWithGoogle(credential, request.getRemoteAddr());
+            return generateAuthResponse(user);
+        } catch (Exception e) {
+            auditLogService.logManual("GUEST", request.getRemoteAddr(), "SECURITY", "LOGIN_FAILED", "User", "Đăng nhập Google thất bại", "FAILED", e.getMessage(), "WARNING");
+            return ResponseEntity.status(401).body("Xác thực Google thất bại: " + e.getMessage());
+        }
     }
 
     @PostMapping("/forgot-password")
