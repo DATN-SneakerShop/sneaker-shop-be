@@ -28,7 +28,6 @@ public class ProductSpecification {
             boolean needVariantJoin =
                     (req.getKeyword() != null && !req.getKeyword().isBlank()) ||
                             (req.getSize() != null && !req.getSize().isBlank()) ||
-                            (req.getSizeType() != null && !req.getSizeType().isBlank()) ||
                             (req.getColorway() != null && !req.getColorway().isBlank()) ||
                             (req.getVariantStatus() != null && !req.getVariantStatus().isBlank()) ||
                             (req.getSortPrice() != null && !req.getSortPrice().isBlank());
@@ -147,14 +146,7 @@ public class ProductSpecification {
                     );
                 }
 
-                if (req.getSizeType() != null && !req.getSizeType().isBlank()) {
-                    predicates.add(
-                            cb.equal(
-                                    cb.lower(variantJoin.get("sizeType")),
-                                    req.getSizeType().toLowerCase().trim()
-                            )
-                    );
-                }
+
 
                 if (req.getColorway() != null && !req.getColorway().isBlank()) {
                     predicates.add(

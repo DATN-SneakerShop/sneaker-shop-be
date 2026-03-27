@@ -13,10 +13,9 @@ public interface ProductVariantRepository extends JpaRepository<ProductVariant, 
     boolean existsBySku(String sku);
 
     // ✅ Check trùng variant trong cùng product
-    boolean existsByProduct_IdAndSizeAndSizeTypeAndColorway(
+    boolean existsByProduct_IdAndSizeAndColorway(
             Long productId,
             String size,
-            String sizeType,
             String colorway
     );
 

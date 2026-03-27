@@ -18,7 +18,6 @@ public class ProductSearchRequest {
 
     /* ===== VARIANT ===== */
     private String size;
-    private String sizeType;
     private String colorway;
     private String variantStatus;
     private String sortPrice;

@@ -10,7 +10,6 @@ public class ProductVariantResponse {
     private Long id;
     private String sku;
     private String size;
-    private String sizeType;
     private String colorway;
 
     // 🔥 CỔNG CHÍNH: Nhả link ảnh riêng của biến thể về cho Frontend

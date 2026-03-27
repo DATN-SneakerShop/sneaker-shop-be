@@ -11,7 +11,6 @@ public class VariantRequest {
     private String sku;
 
     private String size;         // 8, 9, 10
-    private String sizeType;     // US / EU / UK   ✅ BẮT BUỘC
     private String colorway;     // Black/Red
 
     // 🔥 FIX NÂNG CẤP: Nhận link ảnh từ Form Frontend

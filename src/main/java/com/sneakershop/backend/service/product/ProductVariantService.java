@@ -28,21 +28,19 @@ public class ProductVariantService {
                 );
 
         // ✅ validate trùng variant trong product
-        if (variantRepository.existsByProduct_IdAndSizeAndSizeTypeAndColorway(
+        if (variantRepository.existsByProduct_IdAndSizeAndColorway(
                 productId,
                 request.getSize(),
-                request.getSizeType(),
                 request.getColorway()
         )) {
             throw new IllegalArgumentException(
-                    "Variant already exists (size + sizeType + colorway)"
+                    "Variant already exists (size + colorway)"
             );
         }
 
         ProductVariant v = new ProductVariant();
         v.setProduct(product);
         v.setSize(request.getSize());
-        v.setSizeType(request.getSizeType());
         v.setColorway(request.getColorway());
         v.setStock(request.getStock());
         v.setPrice(request.getPrice());

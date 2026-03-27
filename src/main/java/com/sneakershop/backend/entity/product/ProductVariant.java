@@ -21,7 +21,7 @@ import java.util.List;
         uniqueConstraints = {
                 @UniqueConstraint(columnNames = "sku"),
                 @UniqueConstraint(
-                        columnNames = {"product_id", "size", "sizeType", "colorway"}
+                        columnNames = {"product_id", "size", "colorway"}
                 )
         }
 )
@@ -36,9 +36,6 @@ public class ProductVariant {
 
     @Column(name = "size")
     private String size;
-
-    @Column(name = "sizeType")
-    private String sizeType;
 
     @Column(name = "colorway")
     private String colorway;

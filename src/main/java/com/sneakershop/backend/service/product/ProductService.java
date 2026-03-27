@@ -97,7 +97,6 @@ public class ProductService {
         if (request.getImages() != null) {
             List<ProductImage> images = request.getImages().stream().map(imgReq -> {
                 ProductImage img = new ProductImage();
-                // 🔥 ĐÃ FIX: Sửa thành getImageUrl()
                 img.setImageUrl(imgReq.getImageUrl());
                 img.setThumbnail(imgReq.isThumbnail());
                 img.setProduct(product);
@@ -111,9 +110,9 @@ public class ProductService {
                 ProductVariant v = new ProductVariant();
                 v.setProduct(product);
                 v.setSize(vReq.getSize());
-                v.setSizeType(vReq.getSizeType());
                 v.setColorway(vReq.getColorway());
 
+                // 🔥 LƯU ẢNH LÚC TẠO MỚI BIẾN THỂ
                 v.setImageUrl(vReq.getImageUrl());
 
                 v.setPrice(vReq.getPrice() != null ? vReq.getPrice() : BigDecimal.ZERO);
@@ -168,7 +167,6 @@ public class ProductService {
             p.getImages().clear();
             List<ProductImage> newImages = request.getImages().stream().map(imgReq -> {
                 ProductImage img = new ProductImage();
-                // 🔥 ĐÃ FIX: Sửa thành getImageUrl()
                 img.setImageUrl(imgReq.getImageUrl());
                 img.setThumbnail(imgReq.isThumbnail());
                 img.setProduct(p);
@@ -193,17 +191,16 @@ public class ProductService {
                 if (existingVariantOpt.isEmpty()) {
                     existingVariantOpt = currentVariants.stream()
                             .filter(v -> v.getSize().equals(vReq.getSize())
-                                    && v.getColorway().equals(vReq.getColorway())
-                                    && v.getSizeType().equals(vReq.getSizeType()))
+                                    && v.getColorway().equals(vReq.getColorway()))
                             .findFirst();
                 }
 
                 if (existingVariantOpt.isPresent()) {
                     ProductVariant existing = existingVariantOpt.get();
                     existing.setSize(vReq.getSize());
-                    existing.setSizeType(vReq.getSizeType());
                     existing.setColorway(vReq.getColorway());
 
+                    // 🔥 LƯU ẢNH VÀO BIẾN THỂ CŨ ĐANG UPDATE
                     existing.setImageUrl(vReq.getImageUrl());
 
                     existing.setStock(vReq.getStock());
@@ -215,9 +212,9 @@ public class ProductService {
                     ProductVariant newVariant = new ProductVariant();
                     newVariant.setProduct(p);
                     newVariant.setSize(vReq.getSize());
-                    newVariant.setSizeType(vReq.getSizeType());
                     newVariant.setColorway(vReq.getColorway());
 
+                    // 🔥 LƯU ẢNH VÀO BIẾN THỂ MỚI TINH VỪA ĐƯỢC BẤM NÚT "THÊM"
                     newVariant.setImageUrl(vReq.getImageUrl());
 
                     newVariant.setPrice(vReq.getPrice() != null ? vReq.getPrice() : BigDecimal.ZERO);
@@ -338,9 +335,9 @@ public class ProductService {
                 vRes.setId(v.getId());
                 vRes.setSku(v.getSku());
                 vRes.setSize(v.getSize());
-                vRes.setSizeType(v.getSizeType());
                 vRes.setColorway(v.getColorway());
 
+                // 🔥 NHẢ ẢNH TỪ DATABASE VỀ FRONTEND
                 vRes.setImageUrl(v.getImageUrl());
 
                 vRes.setStock(v.getStock());
@@ -396,8 +393,6 @@ public class ProductService {
     }
 
     @Transactional
-    @AuditAction(module = "PRODUCT", action = "ADD_TAG", entity = "Product",
-            description = "Đã thêm Tag ID #{#tagId} cho SP ID #{#productId}")
     public void addTagToProduct(Long productId, Long tagId) {
         Product product = productRepository.findById(productId).orElseThrow(() -> new RuntimeException("Product not found"));
         ProductTag tag = productTagRepository.findById(tagId).orElseThrow(() -> new RuntimeException("Tag not found"));
@@ -409,8 +404,6 @@ public class ProductService {
     }
 
     @Transactional
-    @AuditAction(module = "PRODUCT", action = "UPDATE_TAGS", entity = "Product",
-            description = "Đã cập nhật danh sách Tag cho SP ID #{#productId}")
     public void updateProductTags(Long productId, List<Long> tagIds) {
         Product product = productRepository.findById(productId).orElseThrow(() -> new RuntimeException("Product not found"));
         List<ProductTag> tags = productTagRepository.findAllById(tagIds);
@@ -419,8 +412,6 @@ public class ProductService {
     }
 
     @Transactional
-    @AuditAction(module = "PRODUCT", action = "REMOVE_TAG", entity = "Product",
-            description = "Đã gỡ Tag ID #{#tagId} khỏi SP ID #{#productId}")
     public void removeTagFromProduct(Long productId, Long tagId) {
         Product product = productRepository.findById(productId).orElseThrow(() -> new RuntimeException("Product not found"));
         product.getTags().removeIf(tag -> tag.getId().equals(tagId));
@@ -451,8 +442,6 @@ public class ProductService {
     }
 
     @Transactional
-    @AuditAction(module = "PRODUCT", action = "UPDATE_STATUS", entity = "Product",
-            description = "Đã cập nhật trạng thái SP ID #{#productId} thành: #{#status}")
     public ProductResponse updateStatus(Long productId, String status) {
         Product product = productRepository.findById(productId).orElseThrow(() -> new RuntimeException("Product not found"));
         product.setStatus(status);
@@ -461,8 +450,6 @@ public class ProductService {
     }
 
     @Transactional
-    @AuditAction(module = "PRODUCT", action = "BATCH_UPDATE", entity = "Product",
-            description = "Đã cập nhật trạng thái hàng loạt SP thành: #{#status}")
     public void batchUpdateStatus(List<Long> ids, String status) {
         List<Product> products = productRepository.findAllById(ids);
         for (Product product : products) {
@@ -477,8 +464,6 @@ public class ProductService {
     }
 
     @Transactional
-    @AuditAction(module = "PRODUCT", action = "BATCH_DELETE", entity = "Product",
-            description = "Đã xóa hàng loạt SP khỏi hệ thống")
     public void batchDelete(List<Long> ids) {
         List<Product> products = productRepository.findAllById(ids);
         for (Product product : products) {
