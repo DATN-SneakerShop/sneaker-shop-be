@@ -44,4 +44,9 @@ public interface PromotionRepository extends JpaRepository<Promotion, Long> {
     List<Promotion> findActivePromotions(
             @Param("variantId") Long variantId,
             @Param("now") LocalDateTime now);
+
+    @Query("SELECT p FROM Promotion p WHERE p.active = true " +
+            "AND :now BETWEEN p.startTime AND p.endTime " +
+            "AND p.deleted = false")
+    List<Promotion> findActivePromotionsForReport(@Param("now") LocalDateTime now);
 }

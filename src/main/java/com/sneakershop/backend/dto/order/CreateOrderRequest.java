@@ -14,7 +14,7 @@ import java.util.List;
 public class CreateOrderRequest {
     private Long customerId;   // null = khách lẻ
     private Long createdById;  // optional (nếu chưa lấy từ security)
-
+    private Long voucherId;
     @NotNull
     private SalesChannel channel;
 

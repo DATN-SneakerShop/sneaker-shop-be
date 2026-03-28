@@ -90,64 +90,50 @@ public class VariantPriceGroupService {
     }
 
     public List<PriceGroupResponse> getAll() {
+        List<ProductVariant> variants = productVariantRepository.findAll(Sort.by(Sort.Direction.DESC, "id"));
+        List<VariantPriceGroup> allGroups = variantPriceGroupRepository.findAll();
 
-        List<ProductVariant> variants =
-                productVariantRepository.findAll(Sort.by(Sort.Direction.DESC, "id"));
-
-        List<VariantPriceGroup> allGroups =
-                variantPriceGroupRepository.findAll();
-
-        Map<Long, List<VariantPriceGroup>> groupMap =
-                allGroups.stream()
-                        .collect(Collectors.groupingBy(
-                                g -> g.getVariant().getId()
-                        ));
+        Map<Long, List<VariantPriceGroup>> groupMap = allGroups.stream()
+                .collect(Collectors.groupingBy(g -> g.getVariant().getId()));
 
         return variants.stream().map(variant -> {
             try {
-                // 🔥 FIX LỖI 400 & EntityNotFound:
-                // Nếu không có product hoặc product đã bị xóa mềm -> Bỏ qua luôn variant này
                 if (variant.getProduct() == null || Boolean.TRUE.equals(variant.getProduct().getDeleted())) {
                     return null;
                 }
 
-                BigDecimal basePrice =
-                        productPriceRepository
-                                .findActivePrice(variant.getId())
-                                .map(ProductPrice::getPrice)
-                                .orElse(variant.getPrice());
+                // Lấy giá niêm yết (Ví dụ: 1.000.000)
+                BigDecimal basePrice = productPriceRepository
+                        .findActivePrice(variant.getId())
+                        .map(ProductPrice::getPrice)
+                        .orElse(variant.getPrice());
 
                 List<String> customerTypes = List.of("VIP", "THUONG");
 
                 List<GroupPriceDTO> groups = customerTypes.stream()
                         .map(type -> {
+                            VariantPriceGroup group = groupMap.getOrDefault(variant.getId(), List.of())
+                                    .stream()
+                                    .filter(g -> g.getLoaiKhach().equalsIgnoreCase(type))
+                                    .findFirst()
+                                    .orElse(null);
 
-                            VariantPriceGroup group =
-                                    groupMap.getOrDefault(variant.getId(), List.of())
-                                            .stream()
-                                            .filter(g -> g.getLoaiKhach().equalsIgnoreCase(type))
-                                            .findFirst()
-                                            .orElse(null);
+                            // Đây là số tiền giảm (300k)
+                            BigDecimal groupDiscountAmount = (group != null) ? group.getPrice() : BigDecimal.ZERO;
 
-                            BigDecimal price =
-                                    group != null
-                                            ? group.getPrice()
-                                            : basePrice;
+                            // CỘT 1: Giá sau giảm nhóm (1.000.000 - 300.000 = 700.000)
+                            BigDecimal priceAfterGroup = basePrice.subtract(groupDiscountAmount);
 
-                            BigDecimal finalPrice =
-                                    pricingCalculationService.calculateFinalPrice(
-                                            variant.getId(),
-                                            type
-                                    );
+                            // CỘT 2: Giá cuối cùng sau KM (Tính ra 350.000)
+                            BigDecimal finalPrice = pricingCalculationService.calculateFinalPrice(variant.getId(), type);
 
                             return new GroupPriceDTO(
                                     type,
-                                    price,
-                                    finalPrice,
+                                    priceAfterGroup, // Giá màu đen dòng trên
+                                    finalPrice,      // Giá màu đỏ dòng dưới
                                     null,
                                     null
                             );
-
                         })
                         .toList();
 

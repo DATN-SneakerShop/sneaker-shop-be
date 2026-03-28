@@ -244,4 +244,5 @@ public class OrderController {
     public ResponseEntity<OrderEmailPreviewDTO> sendConfirmationEmail(@PathVariable Long id) {
         return ResponseEntity.ok(orderService.markEmailSent(id));
     }
+
 }

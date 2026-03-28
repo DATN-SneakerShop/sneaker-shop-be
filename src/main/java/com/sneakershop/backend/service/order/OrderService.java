@@ -10,9 +10,11 @@ import com.sneakershop.backend.entity.order.enums.OrderStatus;
 import com.sneakershop.backend.entity.order.enums.ReturnStatus;
 import com.sneakershop.backend.entity.order.enums.SalesChannel;
 import com.sneakershop.backend.entity.product.ProductVariant;
+import com.sneakershop.backend.entity.voucher.Voucher;
 import com.sneakershop.backend.repository.login.UserRepository;
 import com.sneakershop.backend.repository.order.OrderRepository;
 import com.sneakershop.backend.repository.product.ProductVariantRepository;
+import com.sneakershop.backend.repository.voucher.VoucherRepository;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
 import org.springframework.security.core.Authentication;
@@ -40,6 +42,7 @@ public class OrderService {
     private final ProductVariantRepository productVariantRepository;
     private final EntityManager em;
     private final UserRepository userRepository;
+    private final VoucherRepository voucherRepository;
 
     private Order getOrderOr404(Long id) {
         return orderRepo.findByIdAndDeletedFalse(id)
@@ -234,19 +237,22 @@ public class OrderService {
     }
 
     private void recalcOrderTotals(Order order) {
-        BigDecimal subtotal = BigDecimal.ZERO;
-        for (OrderItem it : defaultItems(order)) {
-            subtotal = subtotal.add(nz(it.getLineTotalAmount()));
-        }
-        order.setSubtotalAmount(subtotal);
+        // subtotal đã được tính lúc thêm item, ở đây chỉ tính Total
+        BigDecimal subtotal = nz(order.getSubtotalAmount());
+        BigDecimal discount = nz(order.getDiscountAmount());
+        BigDecimal ship = nz(order.getShippingFee());
 
-        BigDecimal total = subtotal.subtract(nz(order.getDiscountAmount())).add(nz(order.getShippingFee()));
+        // Tổng cộng = Tiền hàng - Giảm giá + Ship
+        BigDecimal total = subtotal.subtract(discount).add(ship);
         if (total.signum() < 0) total = BigDecimal.ZERO;
+
         order.setTotalAmount(total);
 
-        BigDecimal finalAmount = total.subtract(nz(order.getReturnedAmount()));
-        if (finalAmount.signum() < 0) finalAmount = BigDecimal.ZERO;
-        order.setFinalAmount(finalAmount);
+        // Final = Total - Tiền đã trả lại (nếu có)
+        BigDecimal finalAmt = total.subtract(nz(order.getReturnedAmount()));
+        if (finalAmt.signum() < 0) finalAmt = BigDecimal.ZERO;
+
+        order.setFinalAmount(finalAmt);
     }
 
     private BigDecimal calcRevenue(Order o) {
@@ -290,31 +296,18 @@ public class OrderService {
         order.setPaymentMethod(req.getPaymentMethod());
         order.setNote(req.getNote());
 
+        // 1. Phí ship
         if (req.getChannel() == SalesChannel.OFFLINE) {
             order.setShippingFee(BigDecimal.ZERO);
-        } else if (req.getShippingFee() != null) {
+        } else {
             order.setShippingFee(nz(req.getShippingFee()));
         }
 
-        if (req.getDiscountAmount() != null) {
-            order.setDiscountAmount(nz(req.getDiscountAmount()));
-        }
-
-        if (req.getCustomerId() != null) {
-            order.setCustomer(em.getReference(Customer.class, req.getCustomerId()));
-        }
-
-        User currentUser = getCurrentUserOrNull();
-        if (currentUser != null) {
-            order.setCreatedBy(currentUser);
-        } else if (req.getCreatedById() != null) {
-            order.setCreatedBy(em.getReference(User.class, req.getCreatedById()));
-        }
-
+        // 2. Tính tiền hàng (Subtotal)
         List<OrderItem> items = new ArrayList<>();
+        BigDecimal subtotal = BigDecimal.ZERO;
         for (OrderItemCreateRequest ir : req.getItems()) {
             validateQuantity(ir.getQuantity());
-
             ProductVariant variant = getVariantOr404(ir.getVariantId());
 
             OrderItem it = new OrderItem();
@@ -328,11 +321,57 @@ public class OrderService {
 
             calcLine(it);
             items.add(it);
+            subtotal = subtotal.add(nz(it.getLineTotalAmount()));
+        }
+        order.setItems(items);
+        order.setSubtotalAmount(subtotal);
+
+        // 3. XỬ LÝ VOUCHER (CHỖ NÀY ANH SỬA LẠI CHO CHUẨN)
+        BigDecimal voucherDiscount = BigDecimal.ZERO;
+        if (req.getVoucherId() != null) {
+            Voucher voucher = voucherRepository.findById(req.getVoucherId())
+                    .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Voucher không tồn tại"));
+
+            // Kiểm tra trạng thái và số lượng
+            if (!"ACTIVE".equals(voucher.getStatus())) {
+                throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Voucher hiện không kích hoạt");
+            }
+            if (voucher.getQuantity() != null && voucher.getUsedCount() >= voucher.getQuantity()) {
+                throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Voucher này đã hết lượt sử dụng");
+            }
+
+            // Đổi từ Long sang BigDecimal để tính toán
+            voucherDiscount = BigDecimal.valueOf(nzLong(voucher.getValue()));
+
+            // Quan trọng: Tăng số lượt dùng và LƯU LẠI
+            voucher.setUsedCount(nzInt(voucher.getUsedCount()) + 1);
+            voucherRepository.save(voucher); // Cập nhật vào DB
+
+            // Lưu mã voucher vào Order để sau này khách xem lại đơn biết đã dùng mã gì
+            order.setVoucherCode(voucher.getCode());
         }
 
-        order.setItems(items);
+        // 4. Tổng giảm giá = Voucher + Giảm tay
+        order.setDiscountAmount(voucherDiscount.add(nz(req.getDiscountAmount())));
+
+        // 5. Khách hàng & Người tạo
+        if (req.getCustomerId() != null) {
+            order.setCustomer(em.getReference(Customer.class, req.getCustomerId()));
+        }
+        User currentUser = getCurrentUserOrNull();
+        if (currentUser != null) {
+            order.setCreatedBy(currentUser);
+        }
+
+        // 6. Tính tổng cộng cuối cùng
         recalcOrderTotals(order);
+
         return toDetailDTO(orderRepo.save(order));
+    }
+
+    // Bổ sung hàm hỗ trợ xử lý số null cho Long để tránh lỗi NullPointerException
+    private long nzLong(Long v) {
+        return v == null ? 0L : v;
     }
 
     @Transactional(readOnly = true)

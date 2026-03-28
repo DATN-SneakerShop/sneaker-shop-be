@@ -184,4 +184,11 @@ public class Order {
     protected void onUpdate() {
         this.updatedAt = LocalDateTime.now();
     }
+
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "voucher_id")
+    private com.sneakershop.backend.entity.voucher.Voucher voucher;
+
+    @Column(name = "voucher_code", length = 50)
+    private String voucherCode;
 }

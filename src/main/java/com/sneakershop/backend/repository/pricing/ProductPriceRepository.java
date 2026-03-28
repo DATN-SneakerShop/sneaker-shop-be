@@ -15,7 +15,8 @@ import java.util.Optional;
 public interface ProductPriceRepository extends JpaRepository<ProductPrice, Long> {
 
     /**
-     * 🔥 Bảng giá hiện tại (giá đang active) - Đã chặn sản phẩm bị xóa
+     * 🔥 1. Bảng giá hiện tại
+     * Thêm pp.isDeleted = false để khi xóa mềm dòng đó biến mất khỏi Web
      */
     @Query("""
     SELECT new com.sneakershop.backend.dto.pricing.PriceBoardDTO(
@@ -24,30 +25,19 @@ public interface ProductPriceRepository extends JpaRepository<ProductPrice, Long
     FROM ProductVariant v
     JOIN v.product p
     LEFT JOIN ProductPrice pp
-        ON pp.variant = v AND pp.endDate IS NULL
+        ON pp.variant = v 
+        AND pp.endDate IS NULL 
+        AND pp.isDeleted = false 
     LEFT JOIN pp.currency c
-    WHERE p.deleted = false OR p.deleted IS NULL
+    WHERE (p.deleted = false OR p.deleted IS NULL)
     ORDER BY v.id DESC
-""")
+    """)
     List<PriceBoardDTO> getCurrentPriceBoard();
 
     /**
-     * 🔥 Giá đang áp dụng của variant
+     * 🔥 2. Lịch sử giá theo variant
+     * Phải lọc isDeleted = false để không hiện những dòng đã bị xóa trong Modal lịch sử
      */
-    Optional<ProductPrice> findByVariant_IdAndEndDateIsNull(Long variantId);
-
-    /**
-     * 🔥 Lock giá active khi update (tránh update song song)
-     */
-    @Lock(LockModeType.PESSIMISTIC_WRITE)
-    @Query("""
-        SELECT pp FROM ProductPrice pp
-        WHERE pp.variant.id = :variantId
-        AND pp.endDate IS NULL
-    """)
-    Optional<ProductPrice> findActivePriceForUpdate(
-            @Param("variantId") Long variantId
-    );
     @Query("""
     SELECT new com.sneakershop.backend.dto.pricing.PriceHistoryDTO(
         pp.id,
@@ -60,20 +50,39 @@ public interface ProductPriceRepository extends JpaRepository<ProductPrice, Long
     FROM ProductPrice pp
     JOIN pp.currency c
     WHERE pp.variant.id = :variantId
+      AND pp.isDeleted = false 
     ORDER BY pp.startDate DESC
 """)
     List<PriceHistoryDTO> getPriceHistoryByVariant(
             @Param("variantId") Long variantId
     );
+
+    /**
+     * 🔥 3. Lock giá active khi update
+     */
+    @Lock(LockModeType.PESSIMISTIC_WRITE)
+    @Query("""
+        SELECT pp FROM ProductPrice pp
+        WHERE pp.variant.id = :variantId
+        AND pp.endDate IS NULL
+        AND pp.isDeleted = false 
+    """)
+    Optional<ProductPrice> findActivePriceForUpdate(
+            @Param("variantId") Long variantId
+    );
+
+    /**
+     * 🔥 4. Tìm giá đang áp dụng
+     */
     @Query("""
     SELECT p
     FROM ProductPrice p
     WHERE p.variant.id = :variantId
       AND p.endDate IS NULL
       AND p.isDefault = true
-""")
+      AND p.isDeleted = false 
+    """)
     Optional<ProductPrice> findActivePrice(Long variantId);
-    Optional<ProductPrice> findFirstByVariantIdAndEndDateIsNull(Long variantId);
-
-
+    Optional<ProductPrice> findByVariant_IdAndEndDateIsNull(Long variantId);
+    Optional<ProductPrice> findByVariant_IdAndEndDateIsNullAndIsDeletedFalse(Long variantId);
 }
