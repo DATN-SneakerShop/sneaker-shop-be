@@ -6,7 +6,9 @@ import com.google.api.client.http.javanet.NetHttpTransport;
 import com.google.api.client.json.gson.GsonFactory;
 import com.sneakershop.backend.audit.SystemAuditLogService;
 import com.sneakershop.backend.dto.login.UserRequest;
+import com.sneakershop.backend.entity.customer.Customer;
 import com.sneakershop.backend.entity.login.*;
+import com.sneakershop.backend.repository.customer.CustomerRepository;
 import com.sneakershop.backend.repository.login.*;
 import lombok.RequiredArgsConstructor;
 import org.springframework.mail.SimpleMailMessage;
@@ -29,6 +31,11 @@ public class AuthService {
     private final RoleRepository roleRepository;
     private final PasswordEncoder passwordEncoder;
     private final JavaMailSender mailSender;
+
+    private final CustomerRepository customerRepository;
+
+    // 🔥 Gọi Service Log Tổng mới thay cho Repo Log cũ
+
     private final SystemAuditLogService systemAuditLogService;
 
     // 🔥 HÀM MỚI: XỬ LÝ ĐĂNG NHẬP BẰNG GOOGLE
@@ -94,6 +101,18 @@ public class AuthService {
 
         userRepository.save(user);
 
+
+        // Khi tạo tài khoản sẽ có trong danh sách khách hàng
+        Customer customer = new Customer();
+
+        customer.setTen(user.getFullName());
+        customer.setEmail(user.getEmail());
+        customer.setDiemTichLuy(0);
+
+        customer.setLoaiKhach("NORMAL");
+        customerRepository.save(customer);
+
+        // ✅ GHI LOG THỦ CÔNG QUA SERVICE MỚI
         systemAuditLogService.logManual(
                 request.getEmail(), ip, "AUTH", "REGISTER", "User",
                 "Đăng ký mới qua Email: " + user.getEmail(), "SUCCESS", null, "INFO"

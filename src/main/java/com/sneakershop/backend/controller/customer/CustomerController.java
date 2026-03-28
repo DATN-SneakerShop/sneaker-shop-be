@@ -2,8 +2,11 @@ package com.sneakershop.backend.controller.customer;
 
 import com.sneakershop.backend.dto.customer.CustomerHistoryDTO;
 import com.sneakershop.backend.entity.customer.Customer;
+import com.sneakershop.backend.entity.customer.CustomerPointHistory;
+import com.sneakershop.backend.entity.customer.CustomerRankHistory;
 import com.sneakershop.backend.repository.customer.CustomerPointHistoryRepository;
 import com.sneakershop.backend.repository.customer.CustomerRankHistoryRepository;
+import com.sneakershop.backend.repository.customer.CustomerRepository;
 import com.sneakershop.backend.repository.order.OrderRepository;
 import com.sneakershop.backend.service.customer.CustomerService;
 import lombok.RequiredArgsConstructor;
@@ -21,6 +24,7 @@ public class CustomerController {
     private final CustomerRankHistoryRepository rankRepo;
     private final CustomerPointHistoryRepository pointRepo;
     private final OrderRepository orderRepo;
+    private final CustomerRepository customerRepo;
 
     @GetMapping
     public List<Customer> getAll() { return service.getAllActive(); }
@@ -38,13 +42,37 @@ public class CustomerController {
     public void clearAll() { service.deleteAllCustomers(); }
 
     @GetMapping("/filter")
-    public List<Customer> filter(@RequestParam String loaiKhach) { return service.filterByLoai(loaiKhach); }
-
+    public List<Customer> filter(
+            @RequestParam String loaiKhach,
+            @RequestParam(required = false) Integer inactiveDays
+    ) {
+        return service.filter(loaiKhach, inactiveDays);
+    }
     @GetMapping("/history/all")
     public Map<String, Object> getHistory() {
+
+        List<CustomerRankHistory> rankHistory = rankRepo.findAll();
+        List<CustomerPointHistory> pointHistory = pointRepo.findAll();
+
+        // 👉 map thêm tên khách hàng
+        rankHistory.forEach(r -> {
+            Customer c = customerRepo.findById(r.getCustomerId()).orElse(null);
+            if (c != null) {
+                r.setCustomerName(c.getTen());
+            }
+        });
+
+        pointHistory.forEach(p -> {
+            Customer c = customerRepo.findById(p.getCustomerId()).orElse(null);
+            if (c != null) {
+                p.setCustomerName(c.getTen());
+            }
+        });
+
         Map<String, Object> res = new HashMap<>();
-        res.put("rankHistory", rankRepo.findAll());
-        res.put("pointHistory", pointRepo.findAll());
+        res.put("rankHistory", rankHistory);
+        res.put("pointHistory", pointHistory);
+
         return res;
     }
 
@@ -80,5 +108,11 @@ public class CustomerController {
         }
 
         return "";
+    }
+
+    // Tìm khách theo tên, sđt, email
+    @GetMapping("/search")
+    public List<Customer> search(@RequestParam String keyword) {
+        return service.search(keyword);
     }
 }

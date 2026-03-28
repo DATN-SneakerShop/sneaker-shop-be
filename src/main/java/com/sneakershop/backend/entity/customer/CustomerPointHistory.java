@@ -29,6 +29,9 @@ public class CustomerPointHistory {
     @Column(name = "changed_at", updatable = false)
     private LocalDateTime changedAt;
 
+    @Transient
+    private String customerName;
+
     @PrePersist
     protected void onCreate() {
         this.changedAt = LocalDateTime.now();

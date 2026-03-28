@@ -1,19 +1,23 @@
 package com.sneakershop.backend.service.customer;
 
-import com.sneakershop.backend.audit.AuditAction; // 🔥 Thêm import này
+import com.sneakershop.backend.audit.AuditAction;
 import com.sneakershop.backend.entity.customer.*;
 import com.sneakershop.backend.repository.customer.*;
 import lombok.RequiredArgsConstructor;
+import org.springframework.mail.SimpleMailMessage;
+import org.springframework.mail.javamail.JavaMailSender;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.time.LocalDate;
+import java.time.LocalDateTime;
 import java.util.List;
 
 @Service
 @RequiredArgsConstructor
 public class CustomerService {
 
+    private final JavaMailSender mailSender;
     private final CustomerRepository repository;
     private final CustomerAuditLogService auditLogService;
     private final CustomerRankHistoryRepository rankHistoryRepo;
@@ -25,8 +29,6 @@ public class CustomerService {
     }
 
     @Transactional
-    @AuditAction(module = "CUSTOMER", action = "DELETE", entity = "Customer",
-            description = "Đã dọn sạch TOÀN BỘ dữ liệu khách hàng trong Database")
     public void deleteAllCustomers() {
         rankHistoryRepo.deleteAll();
         pointHistoryRepo.deleteAll();
@@ -35,46 +37,89 @@ public class CustomerService {
     }
 
     @Transactional
-    @AuditAction(module = "CUSTOMER", action = "CREATE", entity = "Customer",
-            description = "Đã thêm khách hàng mới: #{#kh.ten} (Email: #{#kh.email})")
     public Customer create(Customer kh) {
+
         validateCustomer(kh);
-        if (repository.existsByEmail(kh.getEmail())) {
-            throw new RuntimeException("Email này đã được sử dụng trong hệ thống, vui lòng kiểm tra lại!");
+
+        // ✅ check email null-safe
+//        if (kh.getEmail() != null && repository.existsByEmail(kh.getEmail())) {
+//            throw new RuntimeException("Email đã tồn tại");
+//        }
+
+        // EMAIL
+        if (kh.getEmail() != null && kh.getEmail().isBlank()) {
+            kh.setEmail(null);
         }
+
+        if (kh.getEmail() != null && !kh.getEmail().isBlank()) {
+            if (repository.existsByEmail(kh.getEmail())) {
+                throw new RuntimeException("Email đã tồn tại");
+            }
+        }
+
+// PHONE
+        if (kh.getPhone() != null && !kh.getPhone().isBlank()) {
+            if (repository.existsByPhone(kh.getPhone())) {
+                throw new RuntimeException("Số điện thoại đã tồn tại");
+            }
+        }
+
+
         kh.setStatus("ACTIVE");
         kh.setDiemTichLuy(kh.getDiemTichLuy() != null ? kh.getDiemTichLuy() : 0);
         kh.setLoaiKhach(calculateRank(kh.getDiemTichLuy()));
 
-        kh.setUuDaiTheoDiem(
-                discountByPoint(kh.getDiemTichLuy())
-        );
-
-        kh.setUuDaiTheoNhom(
-                discountByGroup(kh.getLoaiKhach())
-        );
+        kh.setUuDaiTheoDiem(discountByPoint(kh.getDiemTichLuy()));
+        kh.setUuDaiTheoNhom(discountByGroup(kh.getLoaiKhach()));
 
         Customer saved = repository.save(kh);
-        auditLogService.log(saved.getId(), "CREATE", "Thêm khách hàng mới", "ADMIN", "127.0.0.1");
+
+        auditLogService.log(saved.getId(), "CREATE", "Thêm khách hàng", "ADMIN", "127.0.0.1");
+
         return saved;
     }
 
     @Transactional
-    @AuditAction(module = "CUSTOMER", action = "UPDATE", entity = "Customer",
-            description = "Đã cập nhật thông tin khách hàng ID #{#id} thành tên: #{#data.ten}")
     public Customer update(Long id, Customer data) {
 
         Customer kh = repository.findById(id)
                 .orElseThrow(() -> new RuntimeException("Không tìm thấy khách hàng"));
 
-        if (!kh.getEmail().equalsIgnoreCase(data.getEmail())
-                && repository.existsByEmail(data.getEmail())) {
+        // ✅ check email an toàn
+//        if (data.getEmail() != null &&
+//                kh.getEmail() != null &&
+//                !kh.getEmail().equalsIgnoreCase(data.getEmail()) &&
+//                repository.existsByEmail(data.getEmail())) {
+//
+//            throw new RuntimeException("Email đã tồn tại");
+//        }
 
-            throw new RuntimeException("Email mới này đã tồn tại trên hệ thống!");
+        // EMAIL
+        if (data.getEmail() != null && !data.getEmail().isBlank()) {
+
+            if (kh.getEmail() == null || !kh.getEmail().equalsIgnoreCase(data.getEmail())) {
+
+                if (repository.existsByEmail(data.getEmail())) {
+                    throw new RuntimeException("Email đã tồn tại");
+                }
+            }
+        }
+
+// PHONE
+
+        if (data.getPhone() != null && !data.getPhone().isBlank()) {
+
+            if (kh.getPhone() == null || !kh.getPhone().equals(data.getPhone())) {
+
+                if (repository.existsByPhone(data.getPhone())) {
+                    throw new RuntimeException("Số điện thoại đã tồn tại");
+                }
+            }
         }
 
         kh.setTen(data.getTen());
         kh.setEmail(data.getEmail());
+        kh.setPhone(data.getPhone()); // 🔥 SĐT
         kh.setNgaySinh(data.getNgaySinh());
         kh.setGhiChu(data.getGhiChu());
 
@@ -96,16 +141,9 @@ public class CustomerService {
             updateRankHistory(kh);
         }
 
-        // luôn cập nhật ưu đãi
-        kh.setUuDaiTheoDiem(
-                discountByPoint(kh.getDiemTichLuy())
-        );
+        kh.setUuDaiTheoDiem(discountByPoint(kh.getDiemTichLuy()));
+        kh.setUuDaiTheoNhom(discountByGroup(kh.getLoaiKhach()));
 
-        kh.setUuDaiTheoNhom(
-                discountByGroup(kh.getLoaiKhach())
-        );
-
-            updateRankHistory(kh);
         return repository.save(kh);
     }
 
@@ -125,16 +163,12 @@ public class CustomerService {
             rankHistoryRepo.save(rh);
 
             kh.setLoaiKhach(newRank);
+
+            sendRankUpMail(kh, oldRank, newRank); // 🔥 gửi mail
         }
 
-        // luôn cập nhật ưu đãi
-        kh.setUuDaiTheoDiem(
-                discountByPoint(kh.getDiemTichLuy())
-        );
-
-        kh.setUuDaiTheoNhom(
-                discountByGroup(kh.getLoaiKhach())
-        );
+        kh.setUuDaiTheoDiem(discountByPoint(kh.getDiemTichLuy()));
+        kh.setUuDaiTheoNhom(discountByGroup(kh.getLoaiKhach()));
     }
 
     private String calculateRank(int diem) {
@@ -143,84 +177,119 @@ public class CustomerService {
         return "NORMAL";
     }
 
-    @AuditAction(module = "CUSTOMER", action = "DELETE", entity = "Customer",
-            description = "Đã vô hiệu hóa (INACTIVE) khách hàng ID #{#id}")
     public void delete(Long id) {
-        Customer kh = repository.findById(id).orElseThrow(() -> new RuntimeException("Không tìm thấy"));
+        Customer kh = repository.findById(id)
+                .orElseThrow(() -> new RuntimeException("Không tìm thấy"));
+
         kh.setStatus("INACTIVE");
         repository.save(kh);
     }
 
-    public List<Customer> filterByLoai(String loaiKhach) {
-        if (loaiKhach == null || loaiKhach.equalsIgnoreCase("ALL")) return getAllActive();
+    public List<Customer> filter(String loaiKhach, Integer inactiveDays) {
+
+        // CASE: LÂU KHÔNG HOẠT ĐỘNG
+        if ("INACTIVE".equalsIgnoreCase(loaiKhach) && inactiveDays != null) {
+
+            LocalDateTime date = LocalDateTime.now().minusDays(inactiveDays);
+
+            return repository.findInactiveCustomers(date);
+        }
+
+        // CASE: TẤT CẢ
+        if (loaiKhach == null || loaiKhach.equalsIgnoreCase("ALL")) {
+            return getAllActive();
+        }
+
+        // CASE: VIP / NORMAL / LOYALTY
         return repository.findByStatusAndLoaiKhach("ACTIVE", loaiKhach);
     }
 
-    private int discountByPoint(int diem){
-
-        if(diem > 40000){
-            return 10;
-        }
-
-        if(diem > 12000){
-            return 5;
-        }
-
+    private int discountByPoint(int diem) {
+        if (diem > 40000) return 10;
+        if (diem > 12000) return 5;
         return 0;
     }
 
-    private int discountByGroup(String group){
-
-        switch(group){
-
-            case "VIP":
-                return 10;
-
-            case "LOYALTY":
-                return 5;
-
-            default:
-                return 0;
+    private int discountByGroup(String group) {
+        switch (group) {
+            case "VIP": return 10;
+            case "LOYALTY": return 5;
+            default: return 0;
         }
     }
 
-    private void validateAge(LocalDate ngaySinh){
-
-        if(ngaySinh == null){
+    private void validateAge(LocalDate ngaySinh) {
+        if (ngaySinh == null) {
             throw new RuntimeException("Ngày sinh không được để trống");
         }
 
-        LocalDate now = LocalDate.now();
-
-        if(ngaySinh.plusYears(16).isAfter(now)){
-            throw new RuntimeException("Khách hàng phải đủ 16 tuổi");
+        if (ngaySinh.plusYears(16).isAfter(LocalDate.now())) {
+            throw new RuntimeException("Phải đủ 16 tuổi");
         }
     }
 
-    private void validateCustomer(Customer kh){
+    private void validateCustomer(Customer kh) {
 
-        // Tên
-        if(kh.getTen() == null || kh.getTen().trim().isEmpty()){
+        if (kh.getTen() == null || kh.getTen().trim().isEmpty()) {
             throw new RuntimeException("Tên không được để trống");
         }
 
-        if(!kh.getTen().matches("^[a-zA-ZÀ-ỹ\\s]+$")){
-            throw new RuntimeException("Tên không được chứa số hoặc ký tự đặc biệt");
+        if (!kh.getTen().matches("^[a-zA-ZÀ-ỹ\\s]+$")) {
+            throw new RuntimeException("Tên không hợp lệ");
         }
 
-        // Điểm
-        if(kh.getDiemTichLuy() != null && kh.getDiemTichLuy() < 0){
-            throw new RuntimeException("Điểm không được âm");
+        if (kh.getDiemTichLuy() != null && kh.getDiemTichLuy() < 0) {
+            throw new RuntimeException("Điểm không hợp lệ");
         }
 
-        // Tuổi
+        // 🔥 validate SĐT
+        if (kh.getPhone() != null && !kh.getPhone().isBlank()) {
+            if (!kh.getPhone().matches("0\\d{9}")) {
+                throw new RuntimeException("SĐT không hợp lệ");
+            }
+        }
+
         validateAge(kh.getNgaySinh());
-
     }
 
     public Customer findByEmail(String email){
         return repository.findByEmail(email).orElse(null);
     }
 
+    // 🔥 MAIL (AN TOÀN)
+    private void sendRankUpMail(Customer c, String oldRank, String newRank) {
 
+        try {
+
+            if (c.getEmail() == null || c.getEmail().isBlank()) {
+                System.out.println("Không có email → bỏ qua: " + c.getTen());
+                return;
+            }
+
+            SimpleMailMessage message = new SimpleMailMessage();
+
+            message.setTo(c.getEmail());
+            message.setSubject("🎉 Bạn đã được nâng hạng!");
+            message.setText(
+                    "Chúc mừng " + c.getTen() + "\n\n" +
+                            "Từ " + oldRank + " → " + newRank + "\n" +
+                            "Ưu đãi: " + discountByGroup(newRank) + "%"
+            );
+
+            mailSender.send(message);
+
+            System.out.println("Đã gửi mail: " + c.getEmail());
+
+        } catch (Exception e) {
+            System.out.println("Lỗi mail: " + e.getMessage());
+        }
+    }
+
+    // Tìm khách theo tên, sđt, email
+    public List<Customer> search(String keyword) {
+        if (keyword == null || keyword.trim().isEmpty()) {
+            return getAllActive();
+        }
+        return repository.search(keyword);
+    }
 }

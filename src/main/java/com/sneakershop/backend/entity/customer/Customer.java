@@ -16,10 +16,12 @@ public class Customer {
     @Column(name = "ten", nullable = false, length = 100)
     private String ten;
 
-    @Column(name = "email", nullable = false, unique = true, length = 100)
+    // nullable sửa thành true
+    @Column(name = "email", nullable = true, unique = true, length = 100)
     private String email;
 
-    // 🔥 ĐÃ XOÁ BỎ HOÀN TOÀN TRƯỜNG SO_DIEN_THOAI THEO LỆNH CỦA MÀY
+    @Column(name = "so_dien_thoai", length = 15)
+    private String phone;
 
     @Column(name = "ngay_sinh")
     private LocalDate ngaySinh;
@@ -32,6 +34,9 @@ public class Customer {
 
     @Column(name = "tao_luc", updatable = false)
     private LocalDateTime createdAt;
+
+    @Column(name = "updated_at")
+    private LocalDateTime updatedAt;
 
     @Column(name = "diem_tich_luy")
     private Integer diemTichLuy = 0;
@@ -48,5 +53,11 @@ public class Customer {
     @PrePersist
     protected void onCreate() {
         this.createdAt = LocalDateTime.now();
+        this.updatedAt = LocalDateTime.now();
+    }
+
+    @PreUpdate
+    protected void onUpdate() {
+        this.updatedAt = LocalDateTime.now();
     }
 }
