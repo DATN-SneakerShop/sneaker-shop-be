@@ -19,6 +19,7 @@ import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import java.util.Optional;
 import java.util.stream.Collectors;
 
@@ -40,8 +41,6 @@ public class ProductService {
             "Đặt trước", "Đặt trước",
             "Ngừng bán", "Ngừng bán"
     );
-
-    /* ================== QUẢN LÝ TÌM KIẾM ================== */
 
     public Page<ProductResponse> getProducts(Pageable pageable) {
         if (pageable.getSort().isUnsorted()) {
@@ -66,8 +65,6 @@ public class ProductService {
     public Page<ProductResponse> getBestSellingProducts(Pageable pageable) {
         return productRepository.findBestSellingProducts(pageable).map(this::toListResponse);
     }
-
-    /* ================== CRUD OPERATIONS ================== */
 
     @Transactional
     @AuditAction(module = "PRODUCT", action = "CREATE", entity = "Product",
@@ -111,10 +108,9 @@ public class ProductService {
                 v.setProduct(product);
                 v.setSize(vReq.getSize());
                 v.setColorway(vReq.getColorway());
-
-                // 🔥 LƯU ẢNH LÚC TẠO MỚI BIẾN THỂ
+                v.setMaterial(vReq.getMaterial()); // 🔥 NÂNG CẤP
+                v.setSole(vReq.getSole());         // 🔥 NÂNG CẤP
                 v.setImageUrl(vReq.getImageUrl());
-
                 v.setPrice(vReq.getPrice() != null ? vReq.getPrice() : BigDecimal.ZERO);
                 v.setStock(vReq.getStock());
                 v.setStatus(vReq.getStock() > 0 ? "Còn hàng" : "Hết hàng");
@@ -125,7 +121,23 @@ public class ProductService {
         }
 
         updateProductStatus(product);
-        return toListResponse(productRepository.save(product));
+        Product savedProduct = productRepository.save(product);
+
+        if (request.getVariants() != null && savedProduct.getVariants() != null) {
+            for (ProductVariant savedVariant : savedProduct.getVariants()) {
+                BigDecimal reqPrice = request.getVariants().stream()
+                        .filter(r -> r.getSize().equals(savedVariant.getSize())
+                                && r.getColorway().equals(savedVariant.getColorway())
+                                && Objects.equals(r.getMaterial(), savedVariant.getMaterial())
+                                && Objects.equals(r.getSole(), savedVariant.getSole()))
+                        .map(VariantRequest::getPrice)
+                        .findFirst()
+                        .orElse(BigDecimal.ZERO);
+                syncVariantPrice(savedVariant, reqPrice);
+            }
+        }
+
+        return toListResponse(savedProduct);
     }
 
     @Transactional(readOnly = true)
@@ -135,8 +147,7 @@ public class ProductService {
     }
 
     @Transactional
-    @AuditAction(module = "PRODUCT", action = "UPDATE", entity = "Product",
-            description = "Sửa SP ID #{#id}")
+    @AuditAction(module = "PRODUCT", action = "UPDATE", entity = "Product", description = "Sửa SP ID #{#id}")
     public ProductResponse update(Long id, ProductRequest request) {
         Product p = productRepository.findById(id).orElseThrow(() -> new EntityNotFoundException("Product not found"));
 
@@ -155,7 +166,6 @@ public class ProductService {
         p.setMaterial(request.getMaterial());
         p.setLimited(request.getLimited());
         p.setDescription(request.getDescription());
-
         p.setThumbnail(request.getThumbnail());
         p.setStatus(request.getStatus());
 
@@ -183,15 +193,15 @@ public class ProductService {
                 Optional<ProductVariant> existingVariantOpt = Optional.empty();
 
                 if (vReq.getId() != null) {
-                    existingVariantOpt = currentVariants.stream()
-                            .filter(v -> vReq.getId().equals(v.getId()))
-                            .findFirst();
+                    existingVariantOpt = currentVariants.stream().filter(v -> vReq.getId().equals(v.getId())).findFirst();
                 }
 
                 if (existingVariantOpt.isEmpty()) {
                     existingVariantOpt = currentVariants.stream()
                             .filter(v -> v.getSize().equals(vReq.getSize())
-                                    && v.getColorway().equals(vReq.getColorway()))
+                                    && v.getColorway().equals(vReq.getColorway())
+                                    && Objects.equals(v.getMaterial(), vReq.getMaterial()) // 🔥 Kiểm tra 4 trục
+                                    && Objects.equals(v.getSole(), vReq.getSole()))
                             .findFirst();
                 }
 
@@ -199,10 +209,9 @@ public class ProductService {
                     ProductVariant existing = existingVariantOpt.get();
                     existing.setSize(vReq.getSize());
                     existing.setColorway(vReq.getColorway());
-
-                    // 🔥 LƯU ẢNH VÀO BIẾN THỂ CŨ ĐANG UPDATE
+                    existing.setMaterial(vReq.getMaterial());
+                    existing.setSole(vReq.getSole());
                     existing.setImageUrl(vReq.getImageUrl());
-
                     existing.setStock(vReq.getStock());
                     existing.setStatus(vReq.getStock() > 0 ? "Còn hàng" : "Hết hàng");
                     existing.setPrice(vReq.getPrice() != null ? vReq.getPrice() : BigDecimal.ZERO);
@@ -213,10 +222,9 @@ public class ProductService {
                     newVariant.setProduct(p);
                     newVariant.setSize(vReq.getSize());
                     newVariant.setColorway(vReq.getColorway());
-
-                    // 🔥 LƯU ẢNH VÀO BIẾN THỂ MỚI TINH VỪA ĐƯỢC BẤM NÚT "THÊM"
+                    newVariant.setMaterial(vReq.getMaterial());
+                    newVariant.setSole(vReq.getSole());
                     newVariant.setImageUrl(vReq.getImageUrl());
-
                     newVariant.setPrice(vReq.getPrice() != null ? vReq.getPrice() : BigDecimal.ZERO);
                     newVariant.setStock(vReq.getStock());
                     newVariant.setStatus(vReq.getStock() > 0 ? "Còn hàng" : "Hết hàng");
@@ -234,12 +242,45 @@ public class ProductService {
         }
 
         updateProductStatus(p);
-        return toListResponse(productRepository.save(p));
+        Product savedProduct = productRepository.save(p);
+
+        if (request.getVariants() != null && savedProduct.getVariants() != null) {
+            for (ProductVariant savedVariant : savedProduct.getVariants()) {
+                BigDecimal reqPrice = request.getVariants().stream()
+                        .filter(r -> r.getSize().equals(savedVariant.getSize())
+                                && r.getColorway().equals(savedVariant.getColorway())
+                                && Objects.equals(r.getMaterial(), savedVariant.getMaterial())
+                                && Objects.equals(r.getSole(), savedVariant.getSole()))
+                        .map(VariantRequest::getPrice)
+                        .findFirst()
+                        .orElse(BigDecimal.ZERO);
+                syncVariantPrice(savedVariant, reqPrice);
+            }
+        }
+
+        return toListResponse(savedProduct);
+    }
+
+    private void syncVariantPrice(ProductVariant variant, BigDecimal newPrice) {
+        if (newPrice == null) return;
+
+        Optional<ProductPrice> currentPriceOpt = productPriceRepository.findByVariant_IdAndEndDateIsNull(variant.getId());
+        if (currentPriceOpt.isPresent()) {
+            ProductPrice currentPrice = currentPriceOpt.get();
+            if (currentPrice.getPrice().compareTo(newPrice) == 0) return;
+            currentPrice.setEndDate(LocalDateTime.now());
+            productPriceRepository.save(currentPrice);
+        }
+
+        ProductPrice newProductPrice = new ProductPrice();
+        newProductPrice.setVariant(variant);
+        newProductPrice.setPrice(newPrice);
+        newProductPrice.setStartDate(LocalDateTime.now());
+        productPriceRepository.save(newProductPrice);
     }
 
     @Transactional
-    @AuditAction(module = "PRODUCT", action = "DELETE", entity = "Product",
-            description = "Xóa SP ID: #{#id}")
+    @AuditAction(module = "PRODUCT", action = "DELETE", entity = "Product", description = "Xóa SP ID: #{#id}")
     public void delete(Long id) {
         Product product = productRepository.findById(id).orElseThrow(() -> new RuntimeException("Product not found"));
         product.setDeleted(true);
@@ -251,17 +292,13 @@ public class ProductService {
                 variant.setStock(0);
                 if (variant.getProductPrices() != null) {
                     for (ProductPrice price : variant.getProductPrices()) {
-                        if (price.getEndDate() == null) {
-                            price.setEndDate(LocalDateTime.now());
-                        }
+                        if (price.getEndDate() == null) price.setEndDate(LocalDateTime.now());
                     }
                 }
             }
         }
         productRepository.save(product);
     }
-
-    /* ================== MAPPING DỮ LIỆU ================== */
 
     private ProductResponse toListResponse(Product p) {
         ProductResponse res = new ProductResponse();
@@ -336,10 +373,9 @@ public class ProductService {
                 vRes.setSku(v.getSku());
                 vRes.setSize(v.getSize());
                 vRes.setColorway(v.getColorway());
-
-                // 🔥 NHẢ ẢNH TỪ DATABASE VỀ FRONTEND
+                vRes.setMaterial(v.getMaterial()); // 🔥 NÂNG CẤP
+                vRes.setSole(v.getSole());         // 🔥 NÂNG CẤP
                 vRes.setImageUrl(v.getImageUrl());
-
                 vRes.setStock(v.getStock());
 
                 BigDecimal activePrice = productPriceRepository.findByVariant_IdAndEndDateIsNull(v.getId())
@@ -352,8 +388,6 @@ public class ProductService {
         }
         return res;
     }
-
-    /* ================== CÁC HÀM BỔ TRỢ ================== */
 
     public List<ProductSimpleResponse> getAll() {
         return productRepository.findAllSimpleWithVariantCount();
@@ -379,11 +413,23 @@ public class ProductService {
         }).collect(Collectors.toList());
     }
 
+    // 🔥 HÀM TỰ ĐỘNG SINH MÃ SKU VỚI 4 TRỤC BIẾN THỂ
     private String generateVariantSku(Product product, VariantRequest v) {
-        return (product.getSku() + "-" + v.getColorway() + "-" + v.getSize()).toUpperCase().replace(" ", "");
+        StringBuilder sku = new StringBuilder(product.getSku() + "-" + v.getColorway());
+        if (v.getMaterial() != null && !v.getMaterial().isBlank()) {
+            sku.append("-").append(v.getMaterial());
+        }
+        if (v.getSole() != null && !v.getSole().isBlank()) {
+            sku.append("-").append(v.getSole());
+        }
+        sku.append("-").append(v.getSize());
+        return sku.toString().toUpperCase().replace(" ", "");
     }
 
     private void updateProductStatus(Product product) {
+        if (product.getVariants() == null || product.getVariants().isEmpty()) {
+            return;
+        }
         boolean hasStock = product.getVariants().stream().anyMatch(v -> v.getStock() > 0);
         product.setStatus(hasStock ? "Còn hàng" : "Hết hàng");
     }
@@ -396,9 +442,7 @@ public class ProductService {
     public void addTagToProduct(Long productId, Long tagId) {
         Product product = productRepository.findById(productId).orElseThrow(() -> new RuntimeException("Product not found"));
         ProductTag tag = productTagRepository.findById(tagId).orElseThrow(() -> new RuntimeException("Tag not found"));
-        if (product.getTags() == null) {
-            product.setTags(new ArrayList<>());
-        }
+        if (product.getTags() == null) product.setTags(new ArrayList<>());
         product.getTags().add(tag);
         productRepository.save(product);
     }
@@ -475,9 +519,7 @@ public class ProductService {
                     variant.setStock(0);
                     if (variant.getProductPrices() != null) {
                         for (ProductPrice price : variant.getProductPrices()) {
-                            if (price.getEndDate() == null) {
-                                price.setEndDate(LocalDateTime.now());
-                            }
+                            if (price.getEndDate() == null) price.setEndDate(LocalDateTime.now());
                         }
                     }
                 }

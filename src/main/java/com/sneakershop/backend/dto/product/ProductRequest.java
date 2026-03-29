@@ -12,7 +12,6 @@ public class ProductRequest {
     @NotBlank(message = "Product name is required")
     private String name;
 
-    // SKU cha (BE có thể validate hoặc generate)
     @NotBlank(message = "Product SKU is required")
     private String sku;
 
@@ -33,8 +32,9 @@ public class ProductRequest {
     @NotEmpty(message = "CategoryIds is required")
     private List<Long> categoryIds;
 
-    @NotEmpty(message = "Variants is required")
+    // 🔥 ĐÃ FIX: Xóa @NotEmpty ở đây để cho phép tạo sản phẩm không cần biến thể trước
     private List<VariantRequest> variants;
+
     @NotEmpty(message = "Images is required")
     private List<ProductImageRequest> images;
 

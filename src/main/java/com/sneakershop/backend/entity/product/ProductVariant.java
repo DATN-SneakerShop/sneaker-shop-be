@@ -2,7 +2,6 @@ package com.sneakershop.backend.entity.product;
 
 import com.fasterxml.jackson.annotation.JsonIgnore;
 import com.sneakershop.backend.entity.promotion.Promotion;
-// 🔥 Import thêm 2 entity bảng giá
 import com.sneakershop.backend.entity.pricing.ProductPrice;
 import com.sneakershop.backend.entity.pricing.VariantPriceGroup;
 
@@ -21,7 +20,8 @@ import java.util.List;
         uniqueConstraints = {
                 @UniqueConstraint(columnNames = "sku"),
                 @UniqueConstraint(
-                        columnNames = {"product_id", "size", "colorway"}
+                        // 🔥 ĐÃ THÊM: Ràng buộc duy nhất cho 4 trục biến thể
+                        columnNames = {"product_id", "size", "colorway", "material", "sole"}
                 )
         }
 )
@@ -40,7 +40,13 @@ public class ProductVariant {
     @Column(name = "colorway")
     private String colorway;
 
-    // 🔥 FIX NÂNG CẤP: Lưu link ảnh độc lập cho từng biến thể
+    // 🔥 CỘT MỚI: Chất liệu và Loại đế/Phiên bản
+    @Column(name = "material")
+    private String material;
+
+    @Column(name = "sole")
+    private String sole;
+
     @Column(name = "image_url")
     private String imageUrl;
 
@@ -62,12 +68,10 @@ public class ProductVariant {
     @JsonIgnore
     private List<Promotion> promotions;
 
-    // 🔥 FIX LỖI 500: Tự động xóa dữ liệu ở bảng lịch sử giá khi xóa sản phẩm
     @OneToMany(mappedBy = "variant", cascade = CascadeType.ALL, orphanRemoval = true)
     @JsonIgnore
     private List<ProductPrice> productPrices;
 
-    // 🔥 FIX LỖI 500: Tự động xóa dữ liệu ở bảng giá nhóm khách khi xóa sản phẩm
     @OneToMany(mappedBy = "variant", cascade = CascadeType.ALL, orphanRemoval = true)
     @JsonIgnore
     private List<VariantPriceGroup> variantPriceGroups;
