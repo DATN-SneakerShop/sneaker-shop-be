@@ -39,7 +39,7 @@ public class Product {
     private String releaseType;
     private String status; //Còn hàng ,Hết hàng ,Đặt trước , Ngừng bán
 
-    private String material;
+
     private Boolean limited;
 
     @Column(columnDefinition = "TEXT")

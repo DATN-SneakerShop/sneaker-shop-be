@@ -55,9 +55,6 @@ public class VariantPriceGroupService {
         return variantPriceGroupRepository.save(pg);
     }
 
-    /**
-     * Lấy giá theo nhóm khách
-     */
     public BigDecimal getPriceByCustomerType(Long variantId, String loaiKhach) {
 
         Optional<VariantPriceGroup> groupPrice =
@@ -102,7 +99,6 @@ public class VariantPriceGroupService {
                     return null;
                 }
 
-                // Lấy giá niêm yết (Ví dụ: 1.000.000)
                 BigDecimal basePrice = productPriceRepository
                         .findActivePrice(variant.getId())
                         .map(ProductPrice::getPrice)
@@ -118,19 +114,14 @@ public class VariantPriceGroupService {
                                     .findFirst()
                                     .orElse(null);
 
-                            // Đây là số tiền giảm (300k)
                             BigDecimal groupDiscountAmount = (group != null) ? group.getPrice() : BigDecimal.ZERO;
-
-                            // CỘT 1: Giá sau giảm nhóm (1.000.000 - 300.000 = 700.000)
                             BigDecimal priceAfterGroup = basePrice.subtract(groupDiscountAmount);
-
-                            // CỘT 2: Giá cuối cùng sau KM (Tính ra 350.000)
                             BigDecimal finalPrice = pricingCalculationService.calculateFinalPrice(variant.getId(), type);
 
                             return new GroupPriceDTO(
                                     type,
-                                    priceAfterGroup, // Giá màu đen dòng trên
-                                    finalPrice,      // Giá màu đỏ dòng dưới
+                                    priceAfterGroup,
+                                    finalPrice,
                                     null,
                                     null
                             );
@@ -161,12 +152,14 @@ public class VariantPriceGroupService {
                         variant.getProduct().getName(),
                         variant.getProduct().getSku(),
                         variant.getSku(),
-                        variant.getColorway(),
-                        variant.getSize(),
+                        // 🔥 ĐÃ FIX: Lấy tên thuộc tính từ Khóa Ngoại thay vì String
+                        variant.getColor() != null ? variant.getColor().getName() : "N/A",
+                        variant.getSize() != null ? variant.getSize().getName() : "N/A",
                         variant.getProduct().getThumbnail(),
                         variant.getProduct().getBrand(),
                         variant.getProduct().getGender(),
-                        variant.getProduct().getMaterial(),
+                        // (Material đã bị xóa ở Entity Product gốc, trả về N/A để chống lỗi UI)
+                        "N/A",
                         variant.getProduct().getModel(),
                         variant.getProduct().getReleaseYear(),
                         variant.getProduct().getDescription(),
@@ -175,9 +168,8 @@ public class VariantPriceGroupService {
                         promotions
                 );
             } catch (EntityNotFoundException e) {
-                // 🔥 Bắt chặt lỗi Proxy của Hibernate văng ra nếu Product bị giấu
                 return null;
             }
-        }).filter(Objects::nonNull).toList(); // 🔥 Lọc sạch các phần tử null ra khỏi danh sách
+        }).filter(Objects::nonNull).toList();
     }
 }

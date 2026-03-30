@@ -20,8 +20,8 @@ import java.util.List;
         uniqueConstraints = {
                 @UniqueConstraint(columnNames = "sku"),
                 @UniqueConstraint(
-                        // 🔥 ĐÃ THÊM: Ràng buộc duy nhất cho 4 trục biến thể
-                        columnNames = {"product_id", "size", "colorway", "material", "sole"}
+                        // 🔥 ĐÃ FIX: Sửa lại tên cột cho khớp với Khóa Ngoại (FK) bên dưới
+                        columnNames = {"product_id", "size_id", "color_id", "material_id", "sole_id"}
                 )
         }
 )
@@ -34,18 +34,27 @@ public class ProductVariant {
     @Column(nullable = false, unique = true)
     private String sku;
 
-    @Column(name = "size")
-    private String size;
+    // ==========================================
+    // 🔥 ĐÃ FIX: LIÊN KẾT KHÓA NGOẠI (FK) CHUẨN CHỈ
+    // ==========================================
 
-    @Column(name = "colorway")
-    private String colorway;
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "size_id")
+    private Size size;
 
-    // 🔥 CỘT MỚI: Chất liệu và Loại đế/Phiên bản
-    @Column(name = "material")
-    private String material;
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "color_id")
+    private Color color;
 
-    @Column(name = "sole")
-    private String sole;
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "material_id")
+    private Material material;
+
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "sole_id")
+    private Sole sole;
+
+    // ==========================================
 
     @Column(name = "image_url")
     private String imageUrl;

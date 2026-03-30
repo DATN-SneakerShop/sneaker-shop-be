@@ -1,7 +1,9 @@
 package com.sneakershop.backend.repository.product;
 import com.sneakershop.backend.entity.product.Sole;
 import org.springframework.data.jpa.repository.JpaRepository;
-import org.springframework.stereotype.Repository;
+import java.util.List;
 
-@Repository
-public interface SoleRepository extends JpaRepository<Sole, Long> {}
+public interface SoleRepository extends JpaRepository<Sole, Long> {
+    List<Sole> findAllByDeletedFalse();
+    boolean existsByNameAndDeletedFalse(String name);
+}

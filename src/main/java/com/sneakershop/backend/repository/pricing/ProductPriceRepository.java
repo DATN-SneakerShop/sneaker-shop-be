@@ -18,20 +18,17 @@ public interface ProductPriceRepository extends JpaRepository<ProductPrice, Long
      * 🔥 1. Bảng giá hiện tại
      * Thêm pp.isDeleted = false để khi xóa mềm dòng đó biến mất khỏi Web
      */
-    @Query("""
-    SELECT new com.sneakershop.backend.dto.pricing.PriceBoardDTO(
-        v.id, p.name, v.sku, v.colorway, v.size, pp.price, c.symbol
-    )
-    FROM ProductVariant v
-    JOIN v.product p
-    LEFT JOIN ProductPrice pp
-        ON pp.variant = v 
-        AND pp.endDate IS NULL 
-        AND pp.isDeleted = false 
-    LEFT JOIN pp.currency c
-    WHERE (p.deleted = false OR p.deleted IS NULL)
-    ORDER BY v.id DESC
-    """)
+    @Query("SELECT new com.sneakershop.backend.dto.pricing.PriceBoardDTO( " +
+            " v.id, p.name, v.sku, v.color.name, v.size.name, pp.price, c.symbol ) " +
+            "FROM ProductVariant v " +
+            "JOIN v.product p " +
+            "LEFT JOIN ProductPrice pp " +
+            "    ON pp.variant = v " +
+            "    AND pp.endDate IS NULL " +
+            "    AND pp.isDeleted = false " +
+            "LEFT JOIN pp.currency c " +
+            "WHERE (p.deleted = false OR p.deleted IS NULL) " +
+            "ORDER BY v.id DESC")
     List<PriceBoardDTO> getCurrentPriceBoard();
 
     /**

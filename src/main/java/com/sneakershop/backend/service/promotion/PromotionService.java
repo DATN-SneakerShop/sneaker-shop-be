@@ -13,6 +13,7 @@ import org.springframework.transaction.annotation.Transactional;
 
 import javax.persistence.EntityNotFoundException;
 import java.math.BigDecimal;
+import java.math.RoundingMode; // 🔥 THÊM IMPORT NÀY
 import java.time.LocalDateTime;
 import java.util.List;
 
@@ -47,9 +48,18 @@ public class PromotionService {
                     PromotionVariantDTO item = new PromotionVariantDTO();
 
                     item.setVariantId(v.getId());
-                    item.setProductName(v.getProduct().getName());
-                    item.setColor(v.getColorway());
-                    item.setSize(Integer.valueOf(v.getSize()));
+                    item.setProductName(v.getProduct() != null ? v.getProduct().getName() : "Unknown");
+
+                    // 🔥 ĐÃ FIX: Lấy tên màu sắc qua khóa ngoại Entity Color
+                    item.setColor(v.getColor() != null ? v.getColor().getName() : "N/A");
+
+                    // 🔥 ĐÃ FIX: Lấy tên Size qua khóa ngoại và parse an toàn
+                    try {
+                        item.setSize(v.getSize() != null ? Integer.valueOf(v.getSize().getName().trim()) : 0);
+                    } catch (NumberFormatException e) {
+                        item.setSize(0);
+                    }
+
                     item.setStock(v.getStock());
 
                     // ===== LẤY GIÁ GỐC =====
@@ -68,7 +78,8 @@ public class PromotionService {
                         case PERCENT -> discounted =
                                 price.subtract(
                                         price.multiply(promotion.getDiscountValue())
-                                                .divide(BigDecimal.valueOf(100))
+                                                // 🔥 ĐÃ FIX: Thêm RoundingMode.HALF_UP để chống lỗi chia số thập phân vô hạn
+                                                .divide(BigDecimal.valueOf(100), 0, RoundingMode.HALF_UP)
                                 );
 
                         case AMOUNT -> discounted =
@@ -77,10 +88,10 @@ public class PromotionService {
                         case BUY_2_GET_1 -> discounted = price;
                     }
 
-                    item.setDiscountedPrice(discounted);
+                    item.setDiscountedPrice(discounted.compareTo(BigDecimal.ZERO) > 0 ? discounted : BigDecimal.ZERO);
 
                     // ===== IMAGE =====
-                    if (!v.getProduct().getImages().isEmpty()) {
+                    if (v.getProduct() != null && !v.getProduct().getImages().isEmpty()) {
                         item.setThumbnail(
                                 v.getProduct()
                                         .getImages()

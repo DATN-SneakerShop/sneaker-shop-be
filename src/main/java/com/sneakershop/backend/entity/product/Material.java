@@ -8,5 +8,7 @@ import javax.persistence.*;
 public class Material {
     @Id @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
-    private String name; // Ví dụ: Da trơn, Da lộn, Vải Mesh
+    private String name;
+    @Column(name = "deleted")
+    private Boolean deleted = false;
 }

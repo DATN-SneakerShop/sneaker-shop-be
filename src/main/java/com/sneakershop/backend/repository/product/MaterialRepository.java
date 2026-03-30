@@ -1,7 +1,9 @@
 package com.sneakershop.backend.repository.product;
 import com.sneakershop.backend.entity.product.Material;
 import org.springframework.data.jpa.repository.JpaRepository;
-import org.springframework.stereotype.Repository;
+import java.util.List;
 
-@Repository
-public interface MaterialRepository extends JpaRepository<Material, Long> {}
+public interface MaterialRepository extends JpaRepository<Material, Long> {
+    List<Material> findAllByDeletedFalse();
+    boolean existsByNameAndDeletedFalse(String name);
+}

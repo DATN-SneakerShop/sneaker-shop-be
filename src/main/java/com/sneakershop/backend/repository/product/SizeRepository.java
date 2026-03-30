@@ -1,7 +1,9 @@
 package com.sneakershop.backend.repository.product;
 import com.sneakershop.backend.entity.product.Size;
 import org.springframework.data.jpa.repository.JpaRepository;
-import org.springframework.stereotype.Repository;
+import java.util.List;
 
-@Repository
-public interface SizeRepository extends JpaRepository<Size, Long> {}
+public interface SizeRepository extends JpaRepository<Size, Long> {
+    List<Size> findAllByDeletedFalse();
+    boolean existsByNameAndDeletedFalse(String name);
+}

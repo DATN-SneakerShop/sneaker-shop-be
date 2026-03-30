@@ -8,5 +8,7 @@ import javax.persistence.*;
 public class Sole {
     @Id @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
-    private String name; // Ví dụ: Đế TF, Đế IC, Gore-Tex
+    private String name;
+    @Column(name = "deleted")
+    private Boolean deleted = false;
 }

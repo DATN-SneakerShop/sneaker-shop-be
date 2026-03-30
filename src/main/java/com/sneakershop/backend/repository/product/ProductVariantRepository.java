@@ -2,25 +2,12 @@ package com.sneakershop.backend.repository.product;
 
 import com.sneakershop.backend.entity.product.ProductVariant;
 import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.stereotype.Repository;
 
-import java.util.List;
-
+@Repository
 public interface ProductVariantRepository extends JpaRepository<ProductVariant, Long> {
 
-    /* ================== VALIDATE ================== */
-
-    // Check trùng SKU (toàn hệ thống)
     boolean existsBySku(String sku);
 
-    // ✅ Check trùng variant trong cùng product
-    boolean existsByProduct_IdAndSizeAndColorway(
-            Long productId,
-            String size,
-            String colorway
-    );
-
-    /* ================== QUERY ================== */
-
-    // ✅ Lấy toàn bộ variant của 1 sản phẩm
-    List<ProductVariant> findByProduct_Id(Long productId);
+    // ĐÃ XÓA cái hàm existsByProduct_IdAndSizeAndColorway cũ gây nổ Server
 }

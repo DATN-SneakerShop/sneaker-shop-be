@@ -7,54 +7,51 @@ import com.sneakershop.backend.entity.product.Color;
 import com.sneakershop.backend.repository.product.ColorRepository;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 
 import javax.persistence.EntityNotFoundException;
-import javax.transaction.Transactional;
 import java.util.List;
 import java.util.stream.Collectors;
 
 @Service
 @RequiredArgsConstructor
 public class ColorService {
-
     private final ColorRepository colorRepository;
 
-    @AuditAction(module = "PRODUCT", action = "CREATE", entity = "Color",
-            description = "Đã thêm mới màu sắc: #{#request.name}")
-    public ColorResponse create(ColorRequest request) {
-        Color color = new Color();
-        color.setName(request.getName());
-        color.setHexCode(request.getHexCode());
-        colorRepository.save(color);
-        return mapToResponse(color);
-    }
-
     public List<ColorResponse> getAll() {
-        return colorRepository.findAllByOrderByIdDesc().stream()
+        return colorRepository.findAllByDeletedFalse().stream()
                 .map(this::mapToResponse)
                 .collect(Collectors.toList());
     }
 
     @Transactional
-    @AuditAction(module = "PRODUCT", action = "UPDATE", entity = "Color",
-            description = "Đã cập nhật màu ID #{#id} thành: #{#request.name}")
-    public ColorResponse update(Long id, ColorRequest request) {
-        Color color = colorRepository.findById(id)
-                .orElseThrow(() -> new EntityNotFoundException("Color not found: " + id));
-
+    @AuditAction(module = "PRODUCT", action = "CREATE", entity = "Color", description = "Thêm màu: #{#request.name}")
+    public ColorResponse create(ColorRequest request) {
+        if (colorRepository.existsByNameAndDeletedFalse(request.getName())) {
+            throw new RuntimeException("Tên màu này đã tồn tại!");
+        }
+        Color color = new Color();
         color.setName(request.getName());
         color.setHexCode(request.getHexCode());
-        return mapToResponse(color);
+        color.setDeleted(false);
+        return mapToResponse(colorRepository.save(color));
     }
 
     @Transactional
-    @AuditAction(module = "PRODUCT", action = "DELETE", entity = "Color",
-            description = "Đã xóa màu ID #{#id}")
+    @AuditAction(module = "PRODUCT", action = "UPDATE", entity = "Color", description = "Sửa màu ID #{#id}")
+    public ColorResponse update(Long id, ColorRequest request) {
+        Color color = colorRepository.findById(id).orElseThrow(() -> new EntityNotFoundException("Not found"));
+        color.setName(request.getName());
+        color.setHexCode(request.getHexCode());
+        return mapToResponse(colorRepository.save(color));
+    }
+
+    @Transactional
+    @AuditAction(module = "PRODUCT", action = "DELETE", entity = "Color", description = "Ẩn màu ID #{#id}")
     public void delete(Long id) {
-        if (!colorRepository.existsById(id)) {
-            throw new EntityNotFoundException("Color not found: " + id);
-        }
-        colorRepository.deleteById(id);
+        Color color = colorRepository.findById(id).orElseThrow(() -> new EntityNotFoundException("Not found"));
+        color.setDeleted(true); // 🔥 Soft Delete (Ẩn)
+        colorRepository.save(color);
     }
 
     private ColorResponse mapToResponse(Color color) {

@@ -8,5 +8,7 @@ import javax.persistence.*;
 public class Size {
     @Id @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
-    private String name; // Ví dụ: 38, 39, 40, S, M, L
+    private String name;
+    @Column(name = "deleted")
+    private Boolean deleted = false;
 }

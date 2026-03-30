@@ -15,6 +15,7 @@ import com.sneakershop.backend.repository.login.UserRepository;
 import com.sneakershop.backend.repository.order.OrderRepository;
 import com.sneakershop.backend.repository.product.ProductVariantRepository;
 import com.sneakershop.backend.repository.voucher.VoucherRepository;
+import com.sneakershop.backend.service.customer.CustomerService; // 🔥 ĐÃ THÊM IMPORT
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
 import org.springframework.security.core.Authentication;
@@ -43,6 +44,7 @@ public class OrderService {
     private final EntityManager em;
     private final UserRepository userRepository;
     private final VoucherRepository voucherRepository;
+    private final CustomerService customerService; // 🔥 ĐÃ TIÊM (INJECT) BỘ NÃO TÍNH ĐIỂM VÀO ĐÂY
 
     private Order getOrderOr404(Long id) {
         return orderRepo.findByIdAndDeletedFalse(id)
@@ -237,18 +239,15 @@ public class OrderService {
     }
 
     private void recalcOrderTotals(Order order) {
-        // subtotal đã được tính lúc thêm item, ở đây chỉ tính Total
         BigDecimal subtotal = nz(order.getSubtotalAmount());
         BigDecimal discount = nz(order.getDiscountAmount());
         BigDecimal ship = nz(order.getShippingFee());
 
-        // Tổng cộng = Tiền hàng - Giảm giá + Ship
         BigDecimal total = subtotal.subtract(discount).add(ship);
         if (total.signum() < 0) total = BigDecimal.ZERO;
 
         order.setTotalAmount(total);
 
-        // Final = Total - Tiền đã trả lại (nếu có)
         BigDecimal finalAmt = total.subtract(nz(order.getReturnedAmount()));
         if (finalAmt.signum() < 0) finalAmt = BigDecimal.ZERO;
 
@@ -296,14 +295,12 @@ public class OrderService {
         order.setPaymentMethod(req.getPaymentMethod());
         order.setNote(req.getNote());
 
-        // 1. Phí ship
         if (req.getChannel() == SalesChannel.OFFLINE) {
             order.setShippingFee(BigDecimal.ZERO);
         } else {
             order.setShippingFee(nz(req.getShippingFee()));
         }
 
-        // 2. Tính tiền hàng (Subtotal)
         List<OrderItem> items = new ArrayList<>();
         BigDecimal subtotal = BigDecimal.ZERO;
         for (OrderItemCreateRequest ir : req.getItems()) {
@@ -326,13 +323,11 @@ public class OrderService {
         order.setItems(items);
         order.setSubtotalAmount(subtotal);
 
-        // 3. XỬ LÝ VOUCHER (CHỖ NÀY ANH SỬA LẠI CHO CHUẨN)
         BigDecimal voucherDiscount = BigDecimal.ZERO;
         if (req.getVoucherId() != null) {
             Voucher voucher = voucherRepository.findById(req.getVoucherId())
                     .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Voucher không tồn tại"));
 
-            // Kiểm tra trạng thái và số lượng
             if (!"ACTIVE".equals(voucher.getStatus())) {
                 throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Voucher hiện không kích hoạt");
             }
@@ -340,21 +335,14 @@ public class OrderService {
                 throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Voucher này đã hết lượt sử dụng");
             }
 
-            // Đổi từ Long sang BigDecimal để tính toán
             voucherDiscount = BigDecimal.valueOf(nzLong(voucher.getValue()));
-
-            // Quan trọng: Tăng số lượt dùng và LƯU LẠI
             voucher.setUsedCount(nzInt(voucher.getUsedCount()) + 1);
-            voucherRepository.save(voucher); // Cập nhật vào DB
-
-            // Lưu mã voucher vào Order để sau này khách xem lại đơn biết đã dùng mã gì
+            voucherRepository.save(voucher);
             order.setVoucherCode(voucher.getCode());
         }
 
-        // 4. Tổng giảm giá = Voucher + Giảm tay
         order.setDiscountAmount(voucherDiscount.add(nz(req.getDiscountAmount())));
 
-        // 5. Khách hàng & Người tạo
         if (req.getCustomerId() != null) {
             order.setCustomer(em.getReference(Customer.class, req.getCustomerId()));
         }
@@ -363,13 +351,11 @@ public class OrderService {
             order.setCreatedBy(currentUser);
         }
 
-        // 6. Tính tổng cộng cuối cùng
         recalcOrderTotals(order);
 
         return toDetailDTO(orderRepo.save(order));
     }
 
-    // Bổ sung hàm hỗ trợ xử lý số null cho Long để tránh lỗi NullPointerException
     private long nzLong(Long v) {
         return v == null ? 0L : v;
     }
@@ -506,6 +492,11 @@ public class OrderService {
         if (completingNow) {
             assertEnoughStockForCompletion(order);
             decreaseStockForOrder(order);
+
+            // 🔥 ĐÃ TÍCH HỢP TỰ ĐỘNG CỘNG ĐIỂM KHI ĐƠN HÀNG HOÀN TẤT
+            if (order.getCustomer() != null) {
+                customerService.addPointsFromOrder(order.getCustomer().getId(), nz(order.getFinalAmount()).doubleValue());
+            }
         }
 
         order.setOrderStatus(next);
@@ -609,7 +600,6 @@ public class OrderService {
             }
         }
 
-        // Chỉ hoàn kho khi chuyển sang trạng thái trả hàng hoàn tất
         boolean completingReturnNow =
                 req.getReturnStatus() == ReturnStatus.COMPLETED &&
                         previousReturnStatus != ReturnStatus.COMPLETED &&
@@ -648,7 +638,16 @@ public class OrderService {
             }
         }
 
-        recalcOrderTotals(order);
+        recalcOrderTotals(order); // TÍNH LẠI TIỀN TRƯỚC ĐÃ
+
+        // 🔥 ĐÃ TÍCH HỢP TÍCH ĐIỂM CHO TRƯỜNG HỢP HOÀN TẤT ĐƠN THÔNG QUA LUỒNG TRẢ HÀNG
+        if (req.getReturnStatus() == ReturnStatus.COMPLETED && order.getOrderStatus() == OrderStatus.COMPLETED && originalOrderStatus != OrderStatus.COMPLETED) {
+            if (order.getCustomer() != null) {
+                // Tích điểm dựa trên phần tiền thực thu sau khi đã trừ đi hàng hoàn trả
+                customerService.addPointsFromOrder(order.getCustomer().getId(), nz(order.getFinalAmount()).doubleValue());
+            }
+        }
+
         return toDetailDTO(orderRepo.save(order));
     }
 

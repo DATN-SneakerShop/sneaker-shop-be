@@ -49,8 +49,19 @@ public class PromotionDTO {
                 PromotionVariantDTO pv = new PromotionVariantDTO();
                 pv.setVariantId(v.getId());
                 pv.setProductName(v.getProduct().getName());
-                pv.setColor(v.getColorway());
-                pv.setSize(v.getSize() == null ? null : Integer.valueOf(v.getSize()));
+
+                // 🔥 ĐÃ FIX: Lấy Tên Màu sắc
+                pv.setColor(v.getColor() != null ? v.getColor().getName() : null);
+
+                // 🔥 ĐÃ FIX: Ép kiểu an toàn cho Size
+                Integer sizeVal = null;
+                if (v.getSize() != null && v.getSize().getName() != null) {
+                    try {
+                        sizeVal = Integer.valueOf(v.getSize().getName().trim());
+                    } catch (NumberFormatException ignored) {}
+                }
+                pv.setSize(sizeVal);
+
                 pv.setStock(v.getStock());
 
                 // 🔥 FIX ẢNH: Gắn thumbnail và tự ghép domain
