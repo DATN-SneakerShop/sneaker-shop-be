@@ -59,11 +59,11 @@ public interface ProductRepository extends JpaRepository<Product, Long>, JpaSpec
 
     @Query("""
         select new com.sneakershop.backend.dto.product.ProductSimpleResponse(
-            p.id, p.name, p.brand, p.thumbnail, count(distinct v.id), count(distinct pv.id)
+            p.id, p.name, p.brand, p.thumbnail, count(distinct v.id), count(distinct pd.id)
         )
         from Product p
         left join p.variants v
-        left join v.promotions pv with pv.id = :promotionId
+        left join v.promotionDetails pd on pd.promotion.id = :promotionId
         group by p.id, p.name, p.brand, p.thumbnail
         ORDER BY p.id DESC
     """)
@@ -81,7 +81,8 @@ public interface ProductRepository extends JpaRepository<Product, Long>, JpaSpec
         select distinct p
         from Product p
         join p.variants v
-        join v.promotions pr
+        join v.promotionDetails pd
+        join pd.promotion pr
         where pr.id = :promotionId
     """)
     Page<Product> findProductsByPromotion(
@@ -93,7 +94,8 @@ public interface ProductRepository extends JpaRepository<Product, Long>, JpaSpec
         select count(pr) > 0
         from Product p
         join p.variants v
-        join v.promotions pr
+        join v.promotionDetails pd
+        join pd.promotion pr
         where p.id = :productId
           and pr.active = true
           and pr.deleted = false

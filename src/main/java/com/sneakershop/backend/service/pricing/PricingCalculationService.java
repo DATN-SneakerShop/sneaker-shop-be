@@ -3,6 +3,7 @@ package com.sneakershop.backend.service.pricing;
 import com.sneakershop.backend.entity.pricing.ProductPrice;
 import com.sneakershop.backend.entity.pricing.VariantPriceGroup;
 import com.sneakershop.backend.entity.promotion.Promotion;
+import com.sneakershop.backend.entity.promotion.PromotionDetail;
 import com.sneakershop.backend.repository.pricing.ProductPriceRepository;
 import com.sneakershop.backend.repository.pricing.VariantPriceGroupRepository;
 import com.sneakershop.backend.repository.promotion.PromotionRepository;
@@ -25,12 +26,8 @@ public class PricingCalculationService {
     private final ProductPriceRepository productPriceRepository;
     private final PromotionRepository promotionRepository;
 
-    /**
-     * Tính giá cuối cùng: (Giá gốc - Giảm nhóm) - Khuyến mãi
-     */
     public BigDecimal calculateFinalPrice(Long variantId, String loaiKhach) {
 
-        // 1️⃣ Lấy GIÁ GỐC THỰC TẾ (Ví dụ: 1.000.000)
         BigDecimal originalPrice = productPriceRepository
                 .findActivePrice(variantId)
                 .map(ProductPrice::getPrice)
@@ -40,17 +37,13 @@ public class PricingCalculationService {
             return BigDecimal.ZERO;
         }
 
-        // 2️⃣ Lấy SỐ TIỀN GIẢM của nhóm khách hàng (Ví dụ: VIP giảm 300.000)
         BigDecimal groupDiscountAmount = variantPriceGroupRepository
                 .findByVariant_IdAndLoaiKhach(variantId, loaiKhach)
                 .map(VariantPriceGroup::getPrice)
                 .orElse(BigDecimal.ZERO);
 
-        // 3️⃣ Tính giá sau khi đã giảm nhóm (1.000.000 - 300.000 = 700.000)
-        // Đây chính là basePrice mới để tính Khuyến mãi
         BigDecimal priceAfterGroup = originalPrice.subtract(groupDiscountAmount).max(BigDecimal.ZERO);
 
-        // 4️⃣ Lấy promotion active
         LocalDateTime now = LocalDateTime.now();
         List<Promotion> promotions = promotionRepository.findActivePromotions(variantId, now);
 
@@ -58,7 +51,7 @@ public class PricingCalculationService {
             return priceAfterGroup.setScale(0, RoundingMode.HALF_UP);
         }
 
-        // 5️⃣ Tìm KM tốt nhất áp dụng trên giá đã giảm nhóm (700.000)
+        // Tìm KM tốt nhất, truyền thêm variantId vào hàm tính toán
         Promotion bestPromotion = promotions.stream()
                 .filter(p -> {
                     String group = p.getCustomerGroup();
@@ -68,7 +61,7 @@ public class PricingCalculationService {
                 })
                 .max(
                         Comparator.comparing((Promotion p) -> p.getPriority() == null ? 0 : p.getPriority())
-                                .thenComparing(p -> calculateDiscountAmount(priceAfterGroup, p))
+                                .thenComparing(p -> calculateDiscountAmount(priceAfterGroup, p, variantId))
                 )
                 .orElse(null);
 
@@ -76,30 +69,34 @@ public class PricingCalculationService {
             return priceAfterGroup.setScale(0, RoundingMode.HALF_UP);
         }
 
-        // 6️⃣ Tính tiền giảm KM (Ví dụ: 700.000 * 50% = 350.000)
-        BigDecimal promoDiscountAmount = calculateDiscountAmount(priceAfterGroup, bestPromotion);
-
-        // 7️⃣ Giá cuối cùng (700.000 - 350.000 = 350.000)
+        BigDecimal promoDiscountAmount = calculateDiscountAmount(priceAfterGroup, bestPromotion, variantId);
         BigDecimal finalPrice = priceAfterGroup.subtract(promoDiscountAmount);
 
         return finalPrice.max(BigDecimal.ZERO).setScale(0, RoundingMode.HALF_UP);
     }
 
-    /**
-     * Tính tiền giảm - CHUYỂN THÀNH PUBLIC để Service khác gọi được
-     */
-    public BigDecimal calculateDiscountAmount(BigDecimal basePrice, Promotion promotion) {
-        if (promotion == null || promotion.getDiscountType() == null || promotion.getDiscountValue() == null) {
+    public BigDecimal calculateDiscountAmount(BigDecimal basePrice, Promotion promotion, Long variantId) {
+        if (promotion == null) {
+            return BigDecimal.ZERO;
+        }
+
+        // Lấy thông số KM riêng của sản phẩm này
+        PromotionDetail detail = promotion.getPromotionDetails().stream()
+                .filter(pd -> pd.getVariant().getId().equals(variantId))
+                .findFirst()
+                .orElse(null);
+
+        if (detail == null || detail.getDiscountType() == null || detail.getDiscountValue() == null) {
             return BigDecimal.ZERO;
         }
 
         BigDecimal discount;
-        if ("PERCENT".equals(promotion.getDiscountType().name())) {
+        if ("PERCENT".equals(detail.getDiscountType().name())) {
             discount = basePrice
-                    .multiply(promotion.getDiscountValue())
+                    .multiply(detail.getDiscountValue())
                     .divide(BigDecimal.valueOf(100), 0, RoundingMode.HALF_UP);
         } else {
-            discount = promotion.getDiscountValue();
+            discount = detail.getDiscountValue();
         }
         return discount.min(basePrice);
     }

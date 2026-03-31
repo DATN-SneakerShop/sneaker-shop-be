@@ -1,8 +1,10 @@
 package com.sneakershop.backend.dto.promotion;
 
+import com.fasterxml.jackson.annotation.JsonInclude;
 import com.sneakershop.backend.entity.product.ProductVariant;
 import com.sneakershop.backend.entity.promotion.DiscountType;
 import com.sneakershop.backend.entity.promotion.Promotion;
+import com.sneakershop.backend.entity.promotion.PromotionDetail;
 import lombok.AllArgsConstructor;
 import lombok.Data;
 import lombok.NoArgsConstructor;
@@ -14,13 +16,16 @@ import java.util.List;
 @Data
 @AllArgsConstructor
 @NoArgsConstructor
+@JsonInclude(JsonInclude.Include.NON_NULL)
 public class PromotionDTO {
 
     private Long id;
     private String name;
     private String code;
+
     private DiscountType discountType;
     private BigDecimal discountValue;
+
     private Integer priority;
     private LocalDateTime startTime;
     private LocalDateTime endTime;
@@ -28,7 +33,6 @@ public class PromotionDTO {
     private List<Long> variantIds;
     private List<PromotionVariantDTO> variants;
 
-    // 🔥 URL Server để Frontend không phải tự ghép
     private static final String IMAGE_BASE_URL = "http://localhost:8080/";
 
     public static PromotionDTO fromEntity(Promotion p) {
@@ -36,24 +40,32 @@ public class PromotionDTO {
         dto.setId(p.getId());
         dto.setName(p.getName());
         dto.setCode(p.getCode());
-        dto.setDiscountType(p.getDiscountType());
-        dto.setDiscountValue(p.getDiscountValue());
         dto.setPriority(p.getPriority());
         dto.setStartTime(p.getStartTime());
         dto.setEndTime(p.getEndTime());
         dto.setActive(p.getActive());
 
-        if (p.getVariants() != null) {
-            dto.setVariantIds(p.getVariants().stream().map(ProductVariant::getId).toList());
-            dto.setVariants(p.getVariants().stream().map(v -> {
+        if (p.getPromotionDetails() != null && !p.getPromotionDetails().isEmpty()) {
+
+            // 🔥 ĐÃ FIX: Lấy thông tin giảm giá từ detail đầu tiên (đại diện cho đợt khuyến mãi)
+            PromotionDetail firstDetail = p.getPromotionDetails().get(0);
+            dto.setDiscountType(firstDetail.getDiscountType());
+            dto.setDiscountValue(firstDetail.getDiscountValue());
+
+            dto.setVariantIds(p.getPromotionDetails().stream()
+                    .map(pd -> pd.getVariant().getId())
+                    .toList());
+
+            dto.setVariants(p.getPromotionDetails().stream().map(pd -> {
+                ProductVariant v = pd.getVariant();
                 PromotionVariantDTO pv = new PromotionVariantDTO();
                 pv.setVariantId(v.getId());
                 pv.setProductName(v.getProduct().getName());
 
-                // 🔥 ĐÃ FIX: Lấy Tên Màu sắc
+                // Lấy Tên Màu sắc
                 pv.setColor(v.getColor() != null ? v.getColor().getName() : null);
 
-                // 🔥 ĐÃ FIX: Ép kiểu an toàn cho Size
+                // Ép kiểu an toàn cho Size
                 Integer sizeVal = null;
                 if (v.getSize() != null && v.getSize().getName() != null) {
                     try {
@@ -63,21 +75,24 @@ public class PromotionDTO {
                 pv.setSize(sizeVal);
 
                 pv.setStock(v.getStock());
+                pv.setDiscountType(pd.getDiscountType());
+                pv.setDiscountValue(pd.getDiscountValue());
 
-                // 🔥 FIX ẢNH: Gắn thumbnail và tự ghép domain
-                String thumbPath = v.getProduct().getThumbnail();
-                if (thumbPath != null && !thumbPath.startsWith("http")) {
-                    pv.setThumbnail(IMAGE_BASE_URL + thumbPath);
+                String variantImg = v.getImageUrl();
+                String productThumb = v.getProduct().getThumbnail();
+                String finalPath = (variantImg != null && !variantImg.isEmpty()) ? variantImg : productThumb;
+
+                if (finalPath != null && !finalPath.startsWith("http")) {
+                    pv.setThumbnail(IMAGE_BASE_URL + finalPath);
                 } else {
-                    pv.setThumbnail(thumbPath);
+                    pv.setThumbnail(finalPath);
                 }
-
-                // 🔥 FIX GIÁ: Ưu tiên lấy giá bán, nếu ko có thì lấy giá gốc
                 BigDecimal currentPrice = v.getSalePrice() != null && v.getSalePrice().compareTo(BigDecimal.ZERO) > 0
                         ? v.getSalePrice() : (v.getPrice() != null ? v.getPrice() : BigDecimal.ZERO);
 
                 pv.setPrice(currentPrice);
-                pv.setDiscountedPrice(calculateDiscountPrice(currentPrice, p.getDiscountType(), p.getDiscountValue()));
+
+                pv.setDiscountedPrice(calculateDiscountPrice(currentPrice, pd.getDiscountType(), pd.getDiscountValue()));
 
                 return pv;
             }).toList());
@@ -90,6 +105,7 @@ public class PromotionDTO {
         if (type == DiscountType.PERCENT) {
             return price.subtract(price.multiply(value).divide(BigDecimal.valueOf(100)));
         }
+
         return price.subtract(value).max(BigDecimal.ZERO);
     }
 }

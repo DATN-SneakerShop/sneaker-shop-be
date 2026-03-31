@@ -74,6 +74,17 @@ public class Voucher {
     @Column(name = "cap_nhat_luc")
     private LocalDateTime updatedAt;
 
+    @Column(name = "limit_customer_days")
+    private Integer limitCustomerDays;
+    @Column(name = "apply_birthday_month")
+    private Boolean applyBirthdayMonth = false;
+    @Column(name = "min_customer_spent")
+    private Long minCustomerSpent;
+    @Column(name = "max_days_since_last_order")
+    private Integer maxDaysSinceLastOrder;
+    @Column(name = "is_first_order_only")
+    private Boolean isFirstOrderOnly = false;
+
     // 👉 Auto set khi insert
     @PrePersist
     protected void onCreate() {

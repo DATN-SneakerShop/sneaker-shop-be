@@ -7,6 +7,7 @@ import com.sneakershop.backend.dto.promotion.PromotionDTO;
 import com.sneakershop.backend.entity.pricing.ProductPrice;
 import com.sneakershop.backend.entity.pricing.VariantPriceGroup;
 import com.sneakershop.backend.entity.product.ProductVariant;
+import com.sneakershop.backend.entity.promotion.Promotion;
 import com.sneakershop.backend.repository.pricing.ProductPriceRepository;
 import com.sneakershop.backend.repository.pricing.VariantPriceGroupRepository;
 import com.sneakershop.backend.repository.product.ProductVariantRepository;
@@ -128,20 +129,24 @@ public class VariantPriceGroupService {
                         })
                         .toList();
 
-                List<PromotionDTO> promotions = variant.getPromotions()
+                // Đã sửa: Dùng variant.getPromotionDetails() thay vì getPromotions()
+                List<PromotionDTO> promotions = variant.getPromotionDetails()
                         .stream()
-                        .map(p -> {
+                        .map(pd -> {
+                            Promotion p = pd.getPromotion();
                             PromotionDTO dto = new PromotionDTO();
 
                             dto.setId(p.getId());
                             dto.setName(p.getName());
                             dto.setCode(p.getCode());
-                            dto.setDiscountType(p.getDiscountType());
-                            dto.setDiscountValue(p.getDiscountValue());
                             dto.setPriority(p.getPriority());
                             dto.setStartTime(p.getStartTime());
                             dto.setEndTime(p.getEndTime());
                             dto.setActive(p.getActive());
+
+                            // Lấy thông số giảm giá trực tiếp từ PromotionDetail
+                            dto.setDiscountType(pd.getDiscountType());
+                            dto.setDiscountValue(pd.getDiscountValue());
 
                             return dto;
                         })

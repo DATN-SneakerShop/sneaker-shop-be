@@ -13,7 +13,8 @@ public interface PromotionRepository extends JpaRepository<Promotion, Long> {
     @Query("""
         SELECT DISTINCT p
         FROM Promotion p
-        JOIN p.variants v
+        JOIN p.promotionDetails pd
+        JOIN pd.variant v
         WHERE v.id = :variantId
           AND p.active = true
           AND :now BETWEEN p.startTime AND p.endTime
@@ -35,7 +36,8 @@ public interface PromotionRepository extends JpaRepository<Promotion, Long> {
     @Query("""
         SELECT p
         FROM Promotion p
-        JOIN p.variants v
+        JOIN p.promotionDetails pd
+        JOIN pd.variant v
         WHERE v.id = :variantId
           AND p.active = true
           AND (p.deleted = false OR p.deleted IS NULL)

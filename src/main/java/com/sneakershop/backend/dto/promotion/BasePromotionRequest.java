@@ -1,38 +1,18 @@
 package com.sneakershop.backend.dto.promotion;
 
-import com.sneakershop.backend.entity.promotion.DiscountType;
-import lombok.Data;
-
-import javax.validation.constraints.NotBlank;
-import javax.validation.constraints.NotNull;
-import java.math.BigDecimal;
+import lombok.Getter;
+import lombok.Setter;
 import java.time.LocalDateTime;
 import java.util.List;
 
-@Data
+@Getter
+@Setter
 public class BasePromotionRequest {
-
-    @NotBlank
     private String name;
-
-    @NotBlank
-    private String code;
-
-    @NotNull
-    private DiscountType discountType; // 🔥 BẮT BUỘC
-
-    @NotNull
-    private BigDecimal discountValue;
-
-    @NotNull
     private LocalDateTime startTime;
-
-    @NotNull
     private LocalDateTime endTime;
-
-    private Boolean active = true;
-
+    private Boolean active;
     private Integer priority;
 
-    private List<Long> variantIds;
+    private List<PromotionDetailRequest> details;
 }

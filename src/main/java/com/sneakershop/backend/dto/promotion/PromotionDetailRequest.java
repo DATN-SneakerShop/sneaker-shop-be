@@ -7,18 +7,8 @@ import java.math.BigDecimal;
 
 @Getter
 @Setter
-public class PromotionVariantDTO {
+public class PromotionDetailRequest {
     private Long variantId;
-    private String productName;
-    private String color;
-    private Integer size;
-    private Integer stock;
-    private String thumbnail;
-
-    private BigDecimal price; // Giá gốc
-    private BigDecimal discountedPrice; // Giá sau khi giảm
-
-
     private DiscountType discountType;
     private BigDecimal discountValue;
 }

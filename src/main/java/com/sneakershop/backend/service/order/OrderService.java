@@ -15,7 +15,8 @@ import com.sneakershop.backend.repository.login.UserRepository;
 import com.sneakershop.backend.repository.order.OrderRepository;
 import com.sneakershop.backend.repository.product.ProductVariantRepository;
 import com.sneakershop.backend.repository.voucher.VoucherRepository;
-import com.sneakershop.backend.service.customer.CustomerService; // 🔥 ĐÃ THÊM IMPORT
+import com.sneakershop.backend.service.customer.CustomerService;
+import com.sneakershop.backend.service.voucher.VoucherService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
 import org.springframework.security.core.Authentication;
@@ -44,7 +45,8 @@ public class OrderService {
     private final EntityManager em;
     private final UserRepository userRepository;
     private final VoucherRepository voucherRepository;
-    private final CustomerService customerService; // 🔥 ĐÃ TIÊM (INJECT) BỘ NÃO TÍNH ĐIỂM VÀO ĐÂY
+    private final CustomerService customerService; // Phục vụ tích điểm
+    private final VoucherService voucherService;   // Phục vụ trừ lượt voucher
 
     private Order getOrderOr404(Long id) {
         return orderRepo.findByIdAndDeletedFalse(id)
@@ -323,26 +325,53 @@ public class OrderService {
         order.setItems(items);
         order.setSubtotalAmount(subtotal);
 
+        // 3.1 XỬ LÝ MÃ FREE SHIP
+        BigDecimal shippingDiscount = BigDecimal.ZERO;
+        String fsCode = "";
+        if (req.getFreeShipVoucherId() != null) {
+            Voucher fsVoucher = voucherRepository.findById(req.getFreeShipVoucherId()).orElse(null);
+            if (fsVoucher != null && "ACTIVE".equals(fsVoucher.getStatus())) {
+                BigDecimal maxFreeShip = BigDecimal.valueOf(fsVoucher.getValue() != null ? fsVoucher.getValue() : 0L);
+                shippingDiscount = nz(order.getShippingFee()).min(maxFreeShip);
+                fsCode = fsVoucher.getCode();
+            }
+        }
+
+        // 3.2 XỬ LÝ VOUCHER GIẢM GIÁ (SẢN PHẨM)
         BigDecimal voucherDiscount = BigDecimal.ZERO;
+        String vCode = "";
         if (req.getVoucherId() != null) {
             Voucher voucher = voucherRepository.findById(req.getVoucherId())
                     .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Voucher không tồn tại"));
 
-            if (!"ACTIVE".equals(voucher.getStatus())) {
-                throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Voucher hiện không kích hoạt");
-            }
-            if (voucher.getQuantity() != null && voucher.getUsedCount() >= voucher.getQuantity()) {
-                throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Voucher này đã hết lượt sử dụng");
+            if (!"ACTIVE".equals(voucher.getStatus()) ||
+                    (voucher.getQuantity() != null && voucher.getUsedCount() >= voucher.getQuantity())) {
+                throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Voucher không hợp lệ hoặc đã hết lượt");
             }
 
-            voucherDiscount = BigDecimal.valueOf(nzLong(voucher.getValue()));
-            voucher.setUsedCount(nzInt(voucher.getUsedCount()) + 1);
-            voucherRepository.save(voucher);
-            order.setVoucherCode(voucher.getCode());
+            if ("PERCENT".equals(voucher.getType())) {
+                BigDecimal percent = BigDecimal.valueOf(voucher.getValue() != null ? voucher.getValue() : 0L);
+                voucherDiscount = subtotal.multiply(percent).divide(BigDecimal.valueOf(100), RoundingMode.HALF_UP);
+                if (voucher.getMaxDiscount() != null) {
+                    voucherDiscount = voucherDiscount.min(BigDecimal.valueOf(voucher.getMaxDiscount()));
+                }
+            } else {
+                voucherDiscount = BigDecimal.valueOf(voucher.getValue() != null ? voucher.getValue() : 0L);
+            }
+            vCode = voucher.getCode();
         }
 
-        order.setDiscountAmount(voucherDiscount.add(nz(req.getDiscountAmount())));
+        // Lưu tên mã vào đơn hàng
+        String combinedCodes = vCode;
+        if (!fsCode.isEmpty()) {
+            combinedCodes = combinedCodes.isEmpty() ? fsCode : combinedCodes + ", " + fsCode;
+        }
+        order.setVoucherCode(combinedCodes);
 
+        // 4. Tổng giảm giá = Giảm hóa đơn + Giảm ship + Giảm tay
+        order.setDiscountAmount(voucherDiscount.add(shippingDiscount).add(nz(req.getDiscountAmount())));
+
+        // 5. Khách hàng
         if (req.getCustomerId() != null) {
             order.setCustomer(em.getReference(Customer.class, req.getCustomerId()));
         }
@@ -353,7 +382,17 @@ public class OrderService {
 
         recalcOrderTotals(order);
 
-        return toDetailDTO(orderRepo.save(order));
+        Order savedOrder = orderRepo.save(order);
+
+        // 7. GỌI TRỪ SỐ LƯỢNG CHO CẢ 2 MÃ THÔNG QUA VOUCHER SERVICE
+        if (req.getVoucherId() != null) {
+            voucherService.useVoucher(req.getVoucherId(), req.getCustomerId(), savedOrder.getId(), voucherDiscount.doubleValue());
+        }
+        if (req.getFreeShipVoucherId() != null) {
+            voucherService.useVoucher(req.getFreeShipVoucherId(), req.getCustomerId(), savedOrder.getId(), shippingDiscount.doubleValue());
+        }
+
+        return toDetailDTO(savedOrder);
     }
 
     private long nzLong(Long v) {
@@ -493,7 +532,7 @@ public class OrderService {
             assertEnoughStockForCompletion(order);
             decreaseStockForOrder(order);
 
-            // 🔥 ĐÃ TÍCH HỢP TỰ ĐỘNG CỘNG ĐIỂM KHI ĐƠN HÀNG HOÀN TẤT
+            // TÍCH HỢP TỰ ĐỘNG CỘNG ĐIỂM KHI ĐƠN HÀNG HOÀN TẤT
             if (order.getCustomer() != null) {
                 customerService.addPointsFromOrder(order.getCustomer().getId(), nz(order.getFinalAmount()).doubleValue());
             }
@@ -638,12 +677,11 @@ public class OrderService {
             }
         }
 
-        recalcOrderTotals(order); // TÍNH LẠI TIỀN TRƯỚC ĐÃ
+        recalcOrderTotals(order);
 
-        // 🔥 ĐÃ TÍCH HỢP TÍCH ĐIỂM CHO TRƯỜNG HỢP HOÀN TẤT ĐƠN THÔNG QUA LUỒNG TRẢ HÀNG
+        // TÍCH ĐIỂM CHO TRƯỜNG HỢP HOÀN TẤT ĐƠN THÔNG QUA LUỒNG TRẢ HÀNG
         if (req.getReturnStatus() == ReturnStatus.COMPLETED && order.getOrderStatus() == OrderStatus.COMPLETED && originalOrderStatus != OrderStatus.COMPLETED) {
             if (order.getCustomer() != null) {
-                // Tích điểm dựa trên phần tiền thực thu sau khi đã trừ đi hàng hoàn trả
                 customerService.addPointsFromOrder(order.getCustomer().getId(), nz(order.getFinalAmount()).doubleValue());
             }
         }

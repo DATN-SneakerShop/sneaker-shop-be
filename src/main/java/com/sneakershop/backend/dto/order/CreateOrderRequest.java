@@ -24,6 +24,7 @@ public class CreateOrderRequest {
     private BigDecimal shippingFee;
     private BigDecimal discountAmount;
     private String note;
+    private Long freeShipVoucherId;
 
     @Valid
     @NotEmpty

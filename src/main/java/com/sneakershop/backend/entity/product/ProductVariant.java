@@ -1,7 +1,7 @@
 package com.sneakershop.backend.entity.product;
 
 import com.fasterxml.jackson.annotation.JsonIgnore;
-import com.sneakershop.backend.entity.promotion.Promotion;
+import com.sneakershop.backend.entity.promotion.PromotionDetail;
 import com.sneakershop.backend.entity.pricing.ProductPrice;
 import com.sneakershop.backend.entity.pricing.VariantPriceGroup;
 
@@ -35,7 +35,7 @@ public class ProductVariant {
     private String sku;
 
     // ==========================================
-    // 🔥 ĐÃ FIX: LIÊN KẾT KHÓA NGOẠI (FK) CHUẨN CHỈ
+    // 🔥 LIÊN KẾT KHÓA NGOẠI (FK) CHUẨN CHỈ
     // ==========================================
 
     @ManyToOne(fetch = FetchType.LAZY)
@@ -73,15 +73,15 @@ public class ProductVariant {
     @JsonIgnore
     private Product product;
 
-    @ManyToMany(mappedBy = "variants")
-    @JsonIgnore
-    private List<Promotion> promotions;
-
     @OneToMany(mappedBy = "variant", cascade = CascadeType.ALL, orphanRemoval = true)
     @JsonIgnore
-    private List<ProductPrice> productPrices;
+    private List<PromotionDetail> promotionDetails;
 
     @OneToMany(mappedBy = "variant", cascade = CascadeType.ALL, orphanRemoval = true)
     @JsonIgnore
     private List<VariantPriceGroup> variantPriceGroups;
+
+    @OneToMany(mappedBy = "variant", cascade = CascadeType.ALL, orphanRemoval = true)
+    @JsonIgnore
+    private List<ProductPrice> productPrices;
 }

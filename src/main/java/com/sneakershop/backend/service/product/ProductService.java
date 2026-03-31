@@ -2,8 +2,8 @@ package com.sneakershop.backend.service.product;
 
 import com.sneakershop.backend.audit.AuditAction;
 import com.sneakershop.backend.dto.product.*;
-import com.sneakershop.backend.entity.product.*;
 import com.sneakershop.backend.entity.pricing.ProductPrice;
+import com.sneakershop.backend.entity.product.*;
 import com.sneakershop.backend.repository.pricing.ProductPriceRepository;
 import com.sneakershop.backend.repository.product.*;
 import com.sneakershop.backend.repository.promotion.PromotionRepository;
@@ -104,7 +104,6 @@ public class ProductService {
 
         if (request.getVariants() != null) {
             List<ProductVariant> variants = request.getVariants().stream().map(vReq -> {
-                // 🔥 ĐÃ FIX: Resolve các Master Data TRƯỚC để gom hết các lệnh Flush nếu có
                 Size resolvedSize = mapSize(vReq.getSize());
                 Color resolvedColor = mapColor(vReq.getColorway());
                 Material resolvedMaterial = mapMaterial(vReq.getMaterial());
@@ -208,7 +207,6 @@ public class ProductService {
             entityManager.flush();
 
             for (VariantRequest vReq : request.getVariants()) {
-                // 🔥 ĐÃ FIX: Resolve Database TRƯỚC để tránh Hibernate bị ngáo Flush nửa chừng
                 Size resolvedSize = mapSize(vReq.getSize());
                 Color resolvedColor = mapColor(vReq.getColorway());
                 Material resolvedMaterial = mapMaterial(vReq.getMaterial());
@@ -239,7 +237,6 @@ public class ProductService {
                     isNew = true;
                 }
 
-                // Gán dữ liệu sau khi mọi nguy cơ Flush đã kết thúc
                 variant.setSize(resolvedSize);
                 variant.setColor(resolvedColor);
                 variant.setMaterial(resolvedMaterial);

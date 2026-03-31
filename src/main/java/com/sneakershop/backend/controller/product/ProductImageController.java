@@ -22,4 +22,5 @@ public class ProductImageController {
         String url = imageService.uploadTemp(file);
         return Map.of("url", url);
     }
+
 }

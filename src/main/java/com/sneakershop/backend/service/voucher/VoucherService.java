@@ -6,16 +6,20 @@ import com.sneakershop.backend.dto.voucher.VoucherResponse;
 import com.sneakershop.backend.entity.customer.Customer;
 import com.sneakershop.backend.entity.voucher.Voucher;
 import com.sneakershop.backend.entity.voucher.VoucherCustomer;
+import com.sneakershop.backend.entity.voucher.VoucherUsage;
 import com.sneakershop.backend.repository.customer.CustomerRepository;
 import com.sneakershop.backend.repository.voucher.VoucherCustomerRepository;
 import com.sneakershop.backend.repository.voucher.VoucherRepository;
 
+import com.sneakershop.backend.repository.voucher.VoucherUsageRepository;
 import lombok.RequiredArgsConstructor;
+import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Service;
 
 import javax.transaction.Transactional;
 import java.math.BigDecimal;
 import java.time.LocalDateTime;
+import java.time.format.DateTimeFormatter;
 import java.util.List;
 
 @Service
@@ -25,6 +29,28 @@ public class VoucherService {
     private final VoucherRepository voucherRepository;
     private final CustomerRepository customerRepository;
     private final VoucherCustomerRepository voucherCustomerRepository;
+    private final VoucherUsageRepository voucherUsageRepository;
+
+    @Transactional
+    public void useVoucher(Long voucherId, Long customerId, Long orderId, Double discountAmount) {
+        Voucher v = voucherRepository.findById(voucherId)
+                .orElseThrow(() -> new RuntimeException("Voucher không tồn tại"));
+
+        // 1. Tăng số lượng đã dùng
+        v.setUsedCount((v.getUsedCount() == null ? 0 : v.getUsedCount()) + 1);
+        voucherRepository.save(v);
+
+        // 2. Lưu lịch sử sử dụng (Để không cho dùng lại lần 2)
+        VoucherUsage usage = new VoucherUsage();
+        usage.setVoucher(v);
+        if (customerId != null) {
+            customerRepository.findById(customerId).ifPresent(usage::setCustomer);
+        }
+        usage.setOrderId(orderId);
+        usage.setDiscountAmount(discountAmount);
+        usage.setUsedAt(LocalDateTime.now());
+        voucherUsageRepository.save(usage);
+    }
 
     // 🔥 Lấy tất cả voucher
     public List<VoucherResponse> getAllVouchers() {
@@ -121,7 +147,11 @@ public class VoucherService {
         v.setDescription(dto.getDescription());
         v.setStartDate(dto.getStartDate());
         v.setEndDate(dto.getEndDate());
-
+        v.setLimitCustomerDays(dto.getLimitCustomerDays());
+        v.setApplyBirthdayMonth(dto.getApplyBirthdayMonth());
+        v.setMinCustomerSpent(dto.getMinCustomerSpent());
+        v.setMaxDaysSinceLastOrder(dto.getMaxDaysSinceLastOrder());
+        v.setIsFirstOrderOnly(dto.getIsFirstOrderOnly());
         // 3. Tự động tính trạng thái
         LocalDateTime now = LocalDateTime.now();
         if (dto.getStartDate().isAfter(now)) {
@@ -206,5 +236,33 @@ public class VoucherService {
     }
     public List<Voucher> getAvailableVouchers(Long customerId) {
         return voucherRepository.findAvailableVouchers(LocalDateTime.now(), customerId);
+    }
+
+    @Scheduled(cron = "0 0 0 1 * *")
+    @Transactional
+    public void autoCreateMonthlyFreeShipVoucher() {
+        LocalDateTime now = LocalDateTime.now();
+        String monthYear = now.format(DateTimeFormatter.ofPattern("MM/yyyy"));
+
+        Voucher v = new Voucher();
+        v.setName("Miễn Phí Vận Chuyển Tháng " + monthYear);
+        v.setCode("FS" + now.format(DateTimeFormatter.ofPattern("MMyy")));
+        v.setType("SHIPPING"); // Loại voucher là phí ship
+        v.setValue(500000L); // Tối đa 500.000đ
+        v.setMaxDiscount(500000L);
+        v.setMinOrderValue(0L); // Đơn tối thiểu 0đ
+        v.setQuantity(999999); // Số lượng cực lớn để ai cũng lấy được
+        v.setUsedCount(0);
+        v.setIsPublic(true); // Công khai cho tất cả mọi người
+        v.setStatus("ACTIVE");
+
+        // Thời gian áp dụng: Từ đầu tháng đến cuối tháng
+        v.setStartDate(now.withDayOfMonth(1).withHour(0).withMinute(0).withSecond(0));
+        v.setEndDate(now.withDayOfMonth(now.toLocalDate().lengthOfMonth()).withHour(23).withMinute(59).withSecond(59));
+
+        v.setDescription("Ưu đãi giảm tối đa 500k phí vận chuyển cho mọi khách hàng trong tháng " + monthYear);
+        v.setDeleted(false);
+
+        voucherRepository.save(v);
     }
 }

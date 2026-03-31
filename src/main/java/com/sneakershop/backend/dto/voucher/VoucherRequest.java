@@ -1,6 +1,8 @@
 package com.sneakershop.backend.dto.voucher;
 
 import lombok.Data;
+
+import javax.persistence.Column;
 import java.time.LocalDateTime;
 
 @Data
@@ -18,4 +20,9 @@ public class VoucherRequest {
     private String description;
     private LocalDateTime startDate;
     private LocalDateTime endDate;
+    private Boolean applyBirthdayMonth = false;
+    private Integer limitCustomerDays;
+    private Long minCustomerSpent;
+    private Integer maxDaysSinceLastOrder;
+    private Boolean isFirstOrderOnly = false;
 }
