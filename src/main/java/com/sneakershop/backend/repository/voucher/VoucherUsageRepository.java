@@ -6,5 +6,7 @@ import org.springframework.stereotype.Repository;
 
 @Repository
 public interface VoucherUsageRepository extends JpaRepository<VoucherUsage, Long> {
-    // Không cần viết gì thêm, JpaRepository đã hỗ trợ hàm save()
+    boolean existsByVoucher_IdAndCustomer_Id(Long voucherId, Long customerId);
+    boolean existsByVoucher_IdAndGuestEmail(Long voucherId, String guestEmail);
+    boolean existsByVoucher_IdAndOrderId(Long voucherId, Long orderId);
 }

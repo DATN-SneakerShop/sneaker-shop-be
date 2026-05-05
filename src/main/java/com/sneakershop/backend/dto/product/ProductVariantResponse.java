@@ -10,11 +10,8 @@ public class ProductVariantResponse {
     private String size;
     private String colorway;
 
-    // 🔥 2 CỘT MỚI ĐÂY NÀY
-    private String material;
-    private String sole;
-
     private String imageUrl;
+    private BigDecimal originalPrice;
     private BigDecimal price;
     private BigDecimal salePrice;
     private int stock;

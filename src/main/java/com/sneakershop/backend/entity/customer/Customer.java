@@ -1,6 +1,10 @@
 package com.sneakershop.backend.entity.customer;
 
+import com.fasterxml.jackson.annotation.JsonIgnore;
+import com.sneakershop.backend.entity.login.User;
 import lombok.Data;
+import lombok.ToString;
+import lombok.EqualsAndHashCode;
 import javax.persistence.*;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
@@ -8,6 +12,8 @@ import java.time.LocalDateTime;
 @Entity
 @Table(name = "khach_hang")
 @Data
+@ToString(exclude = "user") // Ngăn vòng lặp vô tận của Lombok
+@EqualsAndHashCode(exclude = "user") // Ngăn vòng lặp vô tận của Lombok
 public class Customer {
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
@@ -42,6 +48,11 @@ public class Customer {
 
     @Column(name = "updated_at")
     private LocalDateTime updatedAt;
+
+    @OneToOne
+    @JoinColumn(name = "user_id", unique = true)
+    @JsonIgnore // Cực kỳ quan trọng: Ngăn StackOverflowError khi trả về JSON
+    private User user;
 
     @PrePersist
     protected void onCreate() {

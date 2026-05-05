@@ -2,10 +2,10 @@ package com.sneakershop.backend.service.pricing;
 
 import com.sneakershop.backend.dto.pricing.PriceResultDTO;
 import com.sneakershop.backend.entity.pricing.ProductPrice;
-import com.sneakershop.backend.entity.promotion.DiscountType;
 import com.sneakershop.backend.entity.promotion.Promotion;
 import com.sneakershop.backend.entity.promotion.PromotionDetail;
 import com.sneakershop.backend.repository.pricing.ProductPriceRepository;
+import com.sneakershop.backend.repository.product.ProductVariantRepository;
 import com.sneakershop.backend.repository.promotion.PromotionRepository;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
@@ -21,13 +21,16 @@ public class ProductPricingPromotionService {
 
     private final ProductPriceRepository priceRepository;
     private final PromotionRepository promotionRepository;
+    private final ProductVariantRepository productVariantRepository;
 
     public PriceResultDTO calculateFinalPrice(Long variantId, int quantity) {
 
-        ProductPrice price = priceRepository.findActivePrice(variantId)
-                .orElseThrow(() -> new RuntimeException("Không tìm thấy giá"));
+        BigDecimal unitPrice = priceRepository.findActivePrice(variantId)
+                .map(ProductPrice::getPrice)
+                .orElseGet(() -> productVariantRepository.findById(variantId)
+                        .map(v -> v.getPrice() != null ? v.getPrice() : BigDecimal.ZERO)
+                        .orElse(BigDecimal.ZERO));
 
-        BigDecimal unitPrice = price.getPrice();
         BigDecimal originalTotal = unitPrice.multiply(BigDecimal.valueOf(quantity));
 
         List<Promotion> promotions =
@@ -61,9 +64,11 @@ public class ProductPricingPromotionService {
 
             if (detail == null) continue;
 
+            // 🔥 ĐÃ FIX: Truyền thêm 'quantity' vào hàm để tính toán cho chuẩn
             BigDecimal finalTotal = calculatePromotionTotal(
                     detail,
-                    originalTotal
+                    originalTotal,
+                    quantity
             );
 
             Integer currentPriority = promotion.getPriority() != null ? promotion.getPriority() : 0;
@@ -99,7 +104,8 @@ public class ProductPricingPromotionService {
         );
     }
 
-    private BigDecimal calculatePromotionTotal(PromotionDetail detail, BigDecimal originalTotal) {
+    // 🔥 ĐÃ FIX: Thêm tham số 'int quantity' vào signature
+    private BigDecimal calculatePromotionTotal(PromotionDetail detail, BigDecimal originalTotal, int quantity) {
 
         switch (detail.getDiscountType()) {
             case PERCENT:
@@ -113,7 +119,10 @@ public class ProductPricingPromotionService {
                 return originalTotal.subtract(discount);
 
             case AMOUNT:
-                BigDecimal afterAmount = originalTotal.subtract(detail.getDiscountValue());
+                // 🔥 LỖI GỐC NẰM Ở ĐÂY ĐÃ ĐƯỢC CHỮA:
+                // Phải nhân số tiền giảm của 1 sản phẩm với Số lượng khách mua!
+                BigDecimal totalDiscountAmount = detail.getDiscountValue().multiply(BigDecimal.valueOf(quantity));
+                BigDecimal afterAmount = originalTotal.subtract(totalDiscountAmount);
                 return afterAmount.max(BigDecimal.ZERO);
 
             default:

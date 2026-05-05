@@ -10,6 +10,7 @@ import com.sneakershop.backend.repository.customer.CustomerRepository;
 import com.sneakershop.backend.repository.order.OrderRepository;
 import com.sneakershop.backend.service.customer.CustomerService;
 import lombok.RequiredArgsConstructor;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.HashMap;
@@ -32,8 +33,87 @@ public class CustomerController {
     @PostMapping
     public Customer create(@RequestBody Customer kh) { return service.create(kh); }
 
+    // Gọi thêm UserRepository và CustomerRankRepository
+    @org.springframework.beans.factory.annotation.Autowired
+    private com.sneakershop.backend.repository.login.UserRepository userRepository;
+
+    @org.springframework.beans.factory.annotation.Autowired
+    private com.sneakershop.backend.repository.customer.CustomerRankRepository customerRankRepository;
+
     @PutMapping("/{id}")
-    public Customer update(@PathVariable Long id, @RequestBody Customer kh) { return service.update(id, kh); }
+    public org.springframework.http.ResponseEntity<?> update(@PathVariable Long id, @RequestBody Customer kh) {
+        // 1. Tìm khách hàng cũ đang có trong Database
+        Customer existingCustomer = customerRepo.findById(id).orElse(null);
+
+        if (existingCustomer == null) {
+            return org.springframework.http.ResponseEntity.badRequest().body("Lỗi: Không tìm thấy khách hàng!");
+        }
+
+        // 2. Cập nhật bảng Customer
+        if (kh.getTen() != null && !kh.getTen().isEmpty()) {
+            existingCustomer.setTen(kh.getTen());
+
+            // Đồng bộ họ tên sang cả bảng User để Web nhận diện được
+            if (existingCustomer.getUser() != null) {
+                existingCustomer.getUser().setFullName(kh.getTen());
+                userRepository.save(existingCustomer.getUser());
+            }
+        }
+
+        existingCustomer.setPhone(kh.getPhone());
+        existingCustomer.setNgaySinh(kh.getNgaySinh());
+
+        // ======================================================================
+        // 3. LOGIC TỰ ĐỘNG: XỬ LÝ ĐIỂM TÍCH LŨY VÀ XÉT HẠNG
+        // ======================================================================
+        if (kh.getDiemTichLuy() != null && !kh.getDiemTichLuy().equals(existingCustomer.getDiemTichLuy())) {
+            Integer oldPoints = existingCustomer.getDiemTichLuy() != null ? existingCustomer.getDiemTichLuy() : 0;
+            Integer newPoints = kh.getDiemTichLuy();
+
+            // A. Lưu lịch sử thay đổi Điểm
+            CustomerPointHistory pointHistory = new CustomerPointHistory();
+            pointHistory.setCustomerId(existingCustomer.getId());
+            pointHistory.setOldPoint(oldPoints);
+            pointHistory.setNewPoint(newPoints);
+            pointHistory.setReason("Admin cập nhật điểm thủ công");
+            pointRepo.save(pointHistory);
+
+            // B. Cập nhật điểm mới cho khách
+            existingCustomer.setDiemTichLuy(newPoints);
+
+            // C. Xét Hạng (So sánh với bảng customer_rank_config)
+            java.util.List<com.sneakershop.backend.entity.customer.CustomerRank> ranks =
+                    customerRankRepository.findAllByOrderByMinPointsDesc();
+
+            String newRankName = "NORMAL"; // Mặc định nếu không đạt mốc nào
+
+            for (com.sneakershop.backend.entity.customer.CustomerRank r : ranks) {
+                if (newPoints >= r.getMinPoints()) {
+                    newRankName = r.getName(); // Lấy tên hạng cao nhất mà điểm vừa vượt qua
+                    break;
+                }
+            }
+
+            // D. Nếu hạng mới khác hạng cũ -> Lưu lịch sử hạng và cập nhật
+            String oldRank = existingCustomer.getLoaiKhach();
+            if (oldRank == null || oldRank.isEmpty()) oldRank = "NORMAL";
+
+            if (!newRankName.equals(oldRank)) {
+                CustomerRankHistory rankHistory = new CustomerRankHistory();
+                rankHistory.setCustomerId(existingCustomer.getId());
+                rankHistory.setOldRank(oldRank);
+                rankHistory.setNewRank(newRankName);
+                rankHistory.setReason("Điểm đạt mốc xét hạng mới: " + newPoints);
+                rankRepo.save(rankHistory);
+
+                existingCustomer.setLoaiKhach(newRankName);
+            }
+        }
+        // ======================================================================
+
+        // 4. Lưu lại bản ghi đã cập nhật
+        return org.springframework.http.ResponseEntity.ok(customerRepo.save(existingCustomer));
+    }
 
     @DeleteMapping("/{id}")
     public void delete(@PathVariable Long id) { service.delete(id); }
@@ -48,6 +128,7 @@ public class CustomerController {
     ) {
         return service.filter(loaiKhach, inactiveDays);
     }
+
     @GetMapping("/history/all")
     public Map<String, Object> getHistory() {
 
@@ -114,5 +195,79 @@ public class CustomerController {
     @GetMapping("/search")
     public List<Customer> search(@RequestParam String keyword) {
         return service.search(keyword);
+    }
+
+    @org.springframework.beans.factory.annotation.Autowired
+    private com.sneakershop.backend.repository.customer.AddressRepository addressRepository;
+
+    @GetMapping("/{targetId}/dia-chi")
+    public org.springframework.http.ResponseEntity<?> getAddressesByCustomer(@PathVariable Long targetId) {
+        Customer customer = customerRepo.findByUser_Id(targetId)
+                .orElseGet(() -> customerRepo.findById(targetId).orElse(null));
+
+        if (customer == null) {
+            return org.springframework.http.ResponseEntity.ok(java.util.Collections.emptyList());
+        }
+
+        // Trả về DTO giống hệt bên Web để đảm bảo đồng bộ 100%
+        java.util.List<com.sneakershop.backend.entity.customer.Address> list = addressRepository.findByCustomerId(customer.getId());
+        java.util.List<com.sneakershop.backend.dto.login.CurrentAddressResponse> response = new java.util.ArrayList<>();
+
+        for (com.sneakershop.backend.entity.customer.Address addr : list) {
+            com.sneakershop.backend.dto.login.CurrentAddressResponse dto = new com.sneakershop.backend.dto.login.CurrentAddressResponse();
+            dto.setId(addr.getId());
+            dto.setLabel(addr.getLabel());
+            dto.setRecipientName(addr.getRecipientName());
+            dto.setPhone(addr.getPhone());
+            dto.setProvince(addr.getProvince());
+            dto.setDistrict(addr.getDistrict());
+            dto.setWard(addr.getWard());
+            dto.setDetailAddress(addr.getDetailAddress());
+            dto.setIsDefault(addr.getIsDefault());
+            response.add(dto);
+        }
+        return org.springframework.http.ResponseEntity.ok(response);
+    }
+
+    @PostMapping("/{targetId}/dia-chi")
+    public org.springframework.http.ResponseEntity<?> saveAddressForCustomer(
+            @PathVariable Long targetId,
+            @RequestBody com.sneakershop.backend.dto.login.UpsertCurrentAddressRequest request) { // Dùng DTO giống web
+
+        Customer customer = customerRepo.findByUser_Id(targetId)
+                .orElseGet(() -> customerRepo.findById(targetId).orElse(null));
+
+        if (customer == null) {
+            return org.springframework.http.ResponseEntity.badRequest().body("Lỗi: Không tìm thấy hồ sơ Khách hàng!");
+        }
+
+        com.sneakershop.backend.entity.customer.Address address = new com.sneakershop.backend.entity.customer.Address();
+        address.setCustomer(customer);
+        address.setLabel(request.getLabel());
+        address.setRecipientName(request.getRecipientName());
+        address.setPhone(request.getPhone());
+        address.setProvince(request.getProvince());
+        address.setDistrict(request.getDistrict());
+        address.setWard(request.getWard());
+        address.setDetailAddress(request.getDetailAddress());
+        address.setIsDefault(request.getIsDefault() != null ? request.getIsDefault() : 0);
+
+        if (address.getIsDefault() == 1) {
+            java.util.List<com.sneakershop.backend.entity.customer.Address> oldList =
+                    addressRepository.findByCustomerId(customer.getId());
+            for (com.sneakershop.backend.entity.customer.Address old : oldList) {
+                old.setIsDefault(0);
+                addressRepository.save(old);
+            }
+        }
+
+        addressRepository.save(address);
+        return org.springframework.http.ResponseEntity.ok(address);
+    }
+
+    @DeleteMapping("/dia-chi/{addressId}")
+    public org.springframework.http.ResponseEntity<?> deleteAddress(@PathVariable Long addressId) {
+        addressRepository.deleteById(addressId);
+        return org.springframework.http.ResponseEntity.ok("{\"message\": \"Xóa địa chỉ thành công!\"}");
     }
 }

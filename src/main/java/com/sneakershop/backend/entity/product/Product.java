@@ -60,6 +60,14 @@ public class Product {
     )
     private List<Category> categories;
 
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "material_id")
+    private Material material;
+
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "sole_id")
+    private Sole sole;
+
     /* ================== VARIANTS ================== */
     @OneToMany(
             mappedBy = "product",

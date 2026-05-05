@@ -12,13 +12,17 @@ import java.util.Optional;
 
 public interface CustomerRepository extends JpaRepository<Customer, Long> {
 
-    // ✅ Check trùng Email
     boolean existsByEmail(String email);
 
-    // ✅ Check trùng sđt
     boolean existsByPhone(String phone);
 
+    boolean existsByEmailAndIdNot(String email, Long id);
+
+    boolean existsByPhoneAndIdNot(String phone, Long id);
+
     Optional<Customer> findByEmail(String email);
+
+    Optional<Customer> findByUserId(Long userId);
 
     List<Customer> findByStatus(String status);
 
@@ -28,7 +32,6 @@ public interface CustomerRepository extends JpaRepository<Customer, Long> {
 
     List<Customer> findByLoaiKhach(String loaiKhach);
 
-    // Tìm khách theo tên, sđt, email
     @Query("""
         SELECT c FROM Customer c
         WHERE c.status = 'ACTIVE' AND (
@@ -39,7 +42,6 @@ public interface CustomerRepository extends JpaRepository<Customer, Long> {
     """)
     List<Customer> search(@Param("kw") String keyword);
 
-    // Khách hàng lâu chưa hoạt động
     @Query("""
         SELECT c FROM Customer c
         WHERE c.status = 'ACTIVE'
@@ -47,7 +49,6 @@ public interface CustomerRepository extends JpaRepository<Customer, Long> {
     """)
     List<Customer> findInactiveCustomers(@Param("date") LocalDateTime date);
 
-    // ✅ Lấy danh sách khách hàng để phát Voucher
     @Query("SELECT new com.sneakershop.backend.dto.voucher.CustomerVoucherDTO(" +
             "c.id, c.ten, c.email, c.ngaySinh, c.loaiKhach, " +
             "COUNT(o.id), " +
@@ -57,4 +58,5 @@ public interface CustomerRepository extends JpaRepository<Customer, Long> {
             "GROUP BY c.id, c.ten, c.email, c.ngaySinh, c.loaiKhach, c.createdAt")
     List<CustomerVoucherDTO> findAllForVoucher();
 
+    Optional<Customer> findByUser_Id(Long userId);
 }

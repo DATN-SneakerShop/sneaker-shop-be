@@ -7,6 +7,7 @@ import com.sneakershop.backend.entity.login.User;
 import com.sneakershop.backend.entity.order.Order;
 import com.sneakershop.backend.entity.order.OrderItem;
 import com.sneakershop.backend.entity.order.enums.OrderStatus;
+import com.sneakershop.backend.entity.order.enums.PaymentStatus;
 import com.sneakershop.backend.entity.order.enums.ReturnStatus;
 import com.sneakershop.backend.entity.order.enums.SalesChannel;
 import com.sneakershop.backend.entity.product.ProductVariant;
@@ -16,6 +17,7 @@ import com.sneakershop.backend.repository.order.OrderRepository;
 import com.sneakershop.backend.repository.product.ProductVariantRepository;
 import com.sneakershop.backend.repository.voucher.VoucherRepository;
 import com.sneakershop.backend.service.customer.CustomerService;
+import com.sneakershop.backend.service.notification.TelegramNotificationService;
 import com.sneakershop.backend.service.voucher.VoucherService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
@@ -45,8 +47,10 @@ public class OrderService {
     private final EntityManager em;
     private final UserRepository userRepository;
     private final VoucherRepository voucherRepository;
-    private final CustomerService customerService; // Phục vụ tích điểm
-    private final VoucherService voucherService;   // Phục vụ trừ lượt voucher
+    private final CustomerService customerService;
+    private final VoucherService voucherService;
+    private final OrderInventoryService orderInventoryService;
+    private final TelegramNotificationService telegramNotificationService;
 
     private Order getOrderOr404(Long id) {
         return orderRepo.findByIdAndDeletedFalse(id)
@@ -64,6 +68,10 @@ public class OrderService {
 
     private int nzInt(Integer v) {
         return v == null ? 0 : v;
+    }
+
+    private String safe(Object value) {
+        return value == null ? "" : String.valueOf(value);
     }
 
     private User getCurrentUserOrNull() {
@@ -145,17 +153,24 @@ public class OrderService {
         }
     }
 
-    private void decreaseStock(Long variantId, int qty) {
+    // =========================================================================================
+    // 🔥 CÁC HÀM XỬ LÝ KHO (ĐÃ ĐƯỢC TỐI ƯU HÓA)
+    // =========================================================================================
+    private void decreaseStock(Long variantId, int qty, String productName) {
         if (qty <= 0) return;
         ProductVariant variant = getVariantOr404(variantId);
         int current = variant.getStock();
         if (current < qty) {
+            String name = (productName != null && !productName.isEmpty()) ? productName : ("SKU " + variant.getSku());
             throw new ResponseStatusException(
                     HttpStatus.BAD_REQUEST,
-                    "Variant " + variantId + " does not have enough stock. Current stock = " + current + ", required = " + qty
+                    "Sản phẩm " + name + " không đủ tồn kho! Tồn hiện tại: " + current + ", Cần: " + qty
             );
         }
         variant.setStock(current - qty);
+        if (variant.getStock() == 0) {
+            variant.setStatus("Hết hàng");
+        }
         productVariantRepository.save(variant);
     }
 
@@ -163,47 +178,13 @@ public class OrderService {
         if (qty <= 0) return;
         ProductVariant variant = getVariantOr404(variantId);
         variant.setStock(variant.getStock() + qty);
+        // Nếu trước đó đang Hết hàng mà được cộng trả lại -> Đổi thành Còn hàng
+        if (variant.getStock() > 0 && "Hết hàng".equals(variant.getStatus())) {
+            variant.setStatus("Còn hàng");
+        }
         productVariantRepository.save(variant);
     }
-
-    private void assertEnoughStockForCompletion(Order order) {
-        for (OrderItem it : defaultItems(order)) {
-            if (it.getVariantId() == null) {
-                throw new ResponseStatusException(
-                        HttpStatus.BAD_REQUEST,
-                        "Order item is missing variantId: " + it.getId()
-                );
-            }
-
-            int qty = nzInt(it.getQuantity());
-            if (qty <= 0) {
-                throw new ResponseStatusException(
-                        HttpStatus.BAD_REQUEST,
-                        "Invalid quantity for item: " + it.getId()
-                );
-            }
-
-            ProductVariant variant = getVariantOr404(it.getVariantId());
-            int currentStock = variant.getStock();
-
-            if (currentStock < qty) {
-                throw new ResponseStatusException(
-                        HttpStatus.BAD_REQUEST,
-                        "Không đủ tồn kho cho sản phẩm "
-                                + (it.getProductNameSnapshot() != null ? it.getProductNameSnapshot() : ("Variant#" + it.getVariantId()))
-                                + ". Tồn hiện tại = " + currentStock + ", cần = " + qty
-                );
-            }
-        }
-    }
-
-    private void decreaseStockForOrder(Order order) {
-        for (OrderItem it : defaultItems(order)) {
-            if (it.getVariantId() != null) {
-                decreaseStock(it.getVariantId(), nzInt(it.getQuantity()));
-            }
-        }
-    }
+    // =========================================================================================
 
     private BigDecimal resolveDefaultUnitPrice(ProductVariant variant) {
         try {
@@ -309,6 +290,9 @@ public class OrderService {
             validateQuantity(ir.getQuantity());
             ProductVariant variant = getVariantOr404(ir.getVariantId());
 
+            // 🔥 FIX: KIỂM TRA VÀ TRỪ TỒN KHO NGAY LẬP TỨC KHI TẠO ĐƠN
+            decreaseStock(variant.getId(), ir.getQuantity(), ir.getProductNameSnapshot());
+
             OrderItem it = new OrderItem();
             it.setOrder(order);
             it.setVariant(variant);
@@ -325,7 +309,6 @@ public class OrderService {
         order.setItems(items);
         order.setSubtotalAmount(subtotal);
 
-        // 3.1 XỬ LÝ MÃ FREE SHIP
         BigDecimal shippingDiscount = BigDecimal.ZERO;
         String fsCode = "";
         if (req.getFreeShipVoucherId() != null) {
@@ -337,7 +320,6 @@ public class OrderService {
             }
         }
 
-        // 3.2 XỬ LÝ VOUCHER GIẢM GIÁ (SẢN PHẨM)
         BigDecimal voucherDiscount = BigDecimal.ZERO;
         String vCode = "";
         if (req.getVoucherId() != null) {
@@ -361,17 +343,14 @@ public class OrderService {
             vCode = voucher.getCode();
         }
 
-        // Lưu tên mã vào đơn hàng
         String combinedCodes = vCode;
         if (!fsCode.isEmpty()) {
             combinedCodes = combinedCodes.isEmpty() ? fsCode : combinedCodes + ", " + fsCode;
         }
         order.setVoucherCode(combinedCodes);
 
-        // 4. Tổng giảm giá = Giảm hóa đơn + Giảm ship + Giảm tay
         order.setDiscountAmount(voucherDiscount.add(shippingDiscount).add(nz(req.getDiscountAmount())));
 
-        // 5. Khách hàng
         if (req.getCustomerId() != null) {
             order.setCustomer(em.getReference(Customer.class, req.getCustomerId()));
         }
@@ -384,7 +363,6 @@ public class OrderService {
 
         Order savedOrder = orderRepo.save(order);
 
-        // 7. GỌI TRỪ SỐ LƯỢNG CHO CẢ 2 MÃ THÔNG QUA VOUCHER SERVICE
         if (req.getVoucherId() != null) {
             voucherService.useVoucher(req.getVoucherId(), req.getCustomerId(), savedOrder.getId(), voucherDiscount.doubleValue());
         }
@@ -485,6 +463,8 @@ public class OrderService {
         Order order = getOrderOr404(id);
         assertCancelable(order);
 
+        orderInventoryService.releaseForCancellation(order);
+
         order.setOrderStatus(OrderStatus.CANCELLED);
         order.setCancelReason(req.getReason());
         order.setCancelledAt(LocalDateTime.now());
@@ -512,11 +492,11 @@ public class OrderService {
 
         boolean valid =
                 (current == OrderStatus.NEW &&
-                        (next == OrderStatus.PROCESSING || next == OrderStatus.COMPLETED || next == OrderStatus.CANCELLED)) ||
+                        (next == OrderStatus.PROCESSING || next == OrderStatus.CANCELLED)) ||
                         (current == OrderStatus.PROCESSING &&
-                                (next == OrderStatus.SHIPPING || next == OrderStatus.COMPLETED || next == OrderStatus.CANCELLED)) ||
+                                (next == OrderStatus.SHIPPING || next == OrderStatus.CANCELLED)) ||
                         (current == OrderStatus.SHIPPING &&
-                                next == OrderStatus.COMPLETED) ||
+                                (next == OrderStatus.COMPLETED || next == OrderStatus.CANCELLED)) ||
                         (current == OrderStatus.COMPLETED &&
                                 next == OrderStatus.COMPLETED);
 
@@ -529,10 +509,8 @@ public class OrderService {
 
         boolean completingNow = current != OrderStatus.COMPLETED && next == OrderStatus.COMPLETED;
         if (completingNow) {
-            assertEnoughStockForCompletion(order);
-            decreaseStockForOrder(order);
+            orderInventoryService.commitReservedStock(order);
 
-            // TÍCH HỢP TỰ ĐỘNG CỘNG ĐIỂM KHI ĐƠN HÀNG HOÀN TẤT
             if (order.getCustomer() != null) {
                 customerService.addPointsFromOrder(order.getCustomer().getId(), nz(order.getFinalAmount()).doubleValue());
             }
@@ -545,6 +523,16 @@ public class OrderService {
         }
         if (next == OrderStatus.COMPLETED && order.getCompletedAt() == null) {
             order.setCompletedAt(LocalDateTime.now());
+        }
+
+        if (completingNow) {
+            telegramNotificationService.sendMessage(
+                    "✅ <b>Đơn hàng hoàn thành</b>\n"
+                            + "Mã đơn: <b>" + safe(order.getOrderCode()) + "</b>\n"
+                            + "Khách: <b>" + safe(order.getOrdererName()) + "</b>\n"
+                            + "Tổng tiền: <b>" + nz(order.getFinalAmount()) + " VND</b>\n"
+                            + "Thanh toán: <b>" + String.valueOf(order.getPaymentStatus()) + "</b>"
+            );
         }
 
         recalcOrderTotals(order);
@@ -568,8 +556,10 @@ public class OrderService {
 
         for (OrderItemCreateRequest ir : itemsReq) {
             validateQuantity(ir.getQuantity());
-
             ProductVariant variant = getVariantOr404(ir.getVariantId());
+
+            // 🔥 FIX: TỰ ĐỘNG TRỪ KHO KHI THÊM MỚI ITEM VÀO ĐƠN
+            decreaseStock(variant.getId(), ir.getQuantity(), ir.getProductNameSnapshot());
 
             OrderItem it = new OrderItem();
             it.setOrder(order);
@@ -600,6 +590,19 @@ public class OrderService {
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Order item not found: " + itemId));
 
         validateQuantity(req.getQuantity());
+
+        int oldQty = nzInt(item.getQuantity());
+        int newQty = req.getQuantity();
+        int diff = newQty - oldQty;
+
+        // 🔥 FIX: BÙ/TRỪ KHO THÔNG MINH KHI ĐỔI SỐ LƯỢNG TRONG ĐƠN HÀNG
+        if (diff > 0) {
+            // Khách lấy thêm -> Trừ kho
+            decreaseStock(item.getVariantId(), diff, item.getProductNameSnapshot());
+        } else if (diff < 0) {
+            // Khách giảm số lượng -> Trả lại kho
+            increaseStock(item.getVariantId(), -diff);
+        }
 
         item.setQuantity(req.getQuantity());
         calcLine(item);
@@ -645,12 +648,7 @@ public class OrderService {
                         originalOrderStatus == OrderStatus.COMPLETED;
 
         if (completingReturnNow) {
-            for (OrderItem it : defaultItems(order)) {
-                int returnedQty = nzInt(it.getReturnedQuantity());
-                if (returnedQty > 0 && it.getVariantId() != null) {
-                    increaseStock(it.getVariantId(), returnedQty);
-                }
-            }
+            orderInventoryService.restockReturnedItems(order);
         }
 
         BigDecimal returnedAmount = BigDecimal.ZERO;
@@ -678,7 +676,13 @@ public class OrderService {
         }
 
         recalcOrderTotals(order);
-
+        if (order.getReturnedAmount() != null && order.getReturnedAmount().compareTo(BigDecimal.ZERO) > 0) {
+            if (order.getReturnedAmount().compareTo(order.getTotalAmount()) >= 0) {
+                order.setPaymentStatus(PaymentStatus.REFUNDED); // Hoàn toàn bộ
+            } else {
+                order.setPaymentStatus(PaymentStatus.PARTIALLY_REFUNDED); // Hoàn một phần
+            }
+        }
         // TÍCH ĐIỂM CHO TRƯỜNG HỢP HOÀN TẤT ĐƠN THÔNG QUA LUỒNG TRẢ HÀNG
         if (req.getReturnStatus() == ReturnStatus.COMPLETED && order.getOrderStatus() == OrderStatus.COMPLETED && originalOrderStatus != OrderStatus.COMPLETED) {
             if (order.getCustomer() != null) {

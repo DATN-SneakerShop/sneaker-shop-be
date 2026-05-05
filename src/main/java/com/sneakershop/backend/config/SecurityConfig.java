@@ -33,15 +33,15 @@ public class SecurityConfig {
     public SecurityFilterChain filterChain(HttpSecurity http) throws Exception {
         http
                 .cors().configurationSource(request -> {
-            CorsConfiguration config = new CorsConfiguration();
-            config.setAllowedOrigins(Arrays.asList("http://localhost:5173"));
+                    CorsConfiguration config = new CorsConfiguration();
+                    config.setAllowedOrigins(Arrays.asList("http://localhost:5173"));
                     config.setAllowedMethods(Arrays.asList(
                             "GET", "POST", "PUT", "DELETE", "PATCH", "OPTIONS"
                     ));
-            config.setAllowedHeaders(Arrays.asList("*"));
-            config.setAllowCredentials(true);
-            return config;
-        })
+                    config.setAllowedHeaders(Arrays.asList("*"));
+                    config.setAllowCredentials(true);
+                    return config;
+                })
                 .and().csrf().disable()
                 .sessionManagement().sessionCreationPolicy(SessionCreationPolicy.STATELESS)
                 .and()
@@ -49,6 +49,14 @@ public class SecurityConfig {
                 .antMatchers("/api/orders/**").permitAll()
                 .antMatchers("/api/customers/**").permitAll()
                 .antMatchers("/api/auth/**").permitAll()
+                .antMatchers("/api/v1/cart/**").permitAll()
+                .antMatchers("/api/v1/checkout/**").permitAll()
+                .antMatchers("/api/v1/sepay/webhook").permitAll()
+                .antMatchers("/api/v1/sepay/payment-info/**").permitAll()
+                .antMatchers("/api/storefront/orders/lookup").permitAll()
+                .antMatchers(HttpMethod.GET, "/api/storefront/colors").permitAll()
+                .antMatchers(HttpMethod.GET, "/api/storefront/sizes").permitAll()
+                .antMatchers("/api/storefront/orders/**").authenticated()
                 .antMatchers(HttpMethod.GET, "/api/prices/**").permitAll()
                 .antMatchers(HttpMethod.POST, "/api/pricing/**").permitAll()
                 .antMatchers(HttpMethod.PUT, "/api/pricing/**").permitAll()
@@ -57,7 +65,8 @@ public class SecurityConfig {
                 .antMatchers("/api/categories/**").permitAll()
                 .antMatchers("/uploads/**").permitAll()
                 .antMatchers("/api/admin/promotions/**").hasAuthority("ADMIN")
-                .antMatchers("/api/admin/products/**").permitAll()
+                .antMatchers(HttpMethod.GET, "/api/products/**").permitAll()
+                .antMatchers("/api/admin/products/**").hasAuthority("ADMIN")
                 .antMatchers(HttpMethod.GET, "/api/pricing/**").permitAll()
                 .antMatchers(HttpMethod.POST, "/api/price-campaign/**").permitAll()
                 .antMatchers(HttpMethod.GET, "/api/price-campaign/**").permitAll()
@@ -67,6 +76,8 @@ public class SecurityConfig {
                 .antMatchers(HttpMethod.PUT, "/api/vouchers/**").permitAll()
                 .antMatchers("/api/vouchers/customers-list").permitAll()
                 .antMatchers("/api/reports/promotions/**").permitAll()
+                .antMatchers("/api/reports/promotion-dashboard/**").permitAll()
+                .antMatchers("/api/management/logs/**").hasAuthority("ADMIN")
 
                 // QUAN TRỌNG: Cấu hình quyền cho Logs và Users
                 .antMatchers("/api/management/logs/**").hasAuthority("ADMIN")

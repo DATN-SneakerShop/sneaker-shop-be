@@ -1,46 +1,45 @@
 package com.sneakershop.backend.service.product;
 
 import lombok.RequiredArgsConstructor;
-import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 import org.springframework.web.multipart.MultipartFile;
 
-import java.io.File;
 import java.io.IOException;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.nio.file.Paths;
+import java.nio.file.StandardCopyOption;
 import java.util.UUID;
-
 @Service
 @RequiredArgsConstructor
 public class ProductImageService {
 
-    @Value("${upload.path}")
-    private String uploadPath;
+    // 🔥 Lấy cấu hình từ application.properties giống như WebConfig
+    @org.springframework.beans.factory.annotation.Value("${upload.path}")
+    private String uploadPathConfig;
 
-    /**
-     * Upload ảnh tạm thời (chưa gắn product)
-     */
     public String uploadTemp(MultipartFile file) {
-
-        if (file.isEmpty()) {
+        if (file == null || file.isEmpty()) {
             throw new RuntimeException("File rỗng");
         }
 
-        String fileName = UUID.randomUUID() + "_" + file.getOriginalFilename();
-        File dir = new File(uploadPath);
-
-        if (!dir.exists()) {
-            dir.mkdirs();
-        }
-
-        File dest = new File(dir, fileName);
-
         try {
-            file.transferTo(dest);
-        } catch (IOException e) {
-            throw new RuntimeException("Upload failed", e);
-        }
+            // Dùng biến cấu hình thay vì Paths.get("src", "main", ...)
+            Path uploadPath = Paths.get(uploadPathConfig);
 
-        // FE sẽ dùng URL này để preview
-        return "uploads/" + fileName;
+            if (!Files.exists(uploadPath)) {
+                Files.createDirectories(uploadPath);
+            }
+
+            String fileName = UUID.randomUUID() + "_" + file.getOriginalFilename();
+            Path filePath = uploadPath.resolve(fileName);
+
+            Files.copy(file.getInputStream(), filePath, StandardCopyOption.REPLACE_EXISTING);
+
+            // Trả về đường dẫn để FE gọi: http://localhost:8080/uploads/ten_file.jpg
+            return "uploads/" + fileName;
+        } catch (IOException e) {
+            throw new RuntimeException("Upload failed: " + e.getMessage(), e);
+        }
     }
 }

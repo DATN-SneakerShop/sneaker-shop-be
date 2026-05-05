@@ -12,6 +12,8 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import com.sneakershop.backend.entity.customer.Customer;
+import com.sneakershop.backend.repository.customer.CustomerRepository;
 
 import java.util.List;
 import java.util.Set;
@@ -25,6 +27,7 @@ public class UserService {
     private final RoleRepository roleRepository;
     private final AuditLogRepository auditRepository;
     private final PasswordEncoder passwordEncoder;
+    private final CustomerRepository customerRepository;
 
 
     public List<User> getAllUsers() {
@@ -37,22 +40,46 @@ public class UserService {
     @AuditAction(module = "AUTH", action = "CREATE", entity = "User",
             description = "Đã cấp tài khoản: #{#request.username} | Tên: #{#request.fullName} | Email: #{#request.email} | Quyền: #{#request.roleCodes}")
     public void createUser(UserRequest request, String ip, User admin) {
-        if (userRepository.existsByUsername(request.getUsername())) {
+        if (request == null) {
+            throw new IllegalArgumentException("Dữ liệu tạo tài khoản không được để trống!");
+        }
+        if (request.getUsername() == null || request.getUsername().trim().isEmpty()) {
+            throw new IllegalArgumentException("Tên đăng nhập không được để trống!");
+        }
+        if (request.getEmail() == null || request.getEmail().trim().isEmpty()) {
+            throw new IllegalArgumentException("Email không được để trống!");
+        }
+        if (request.getPassword() == null || request.getPassword().trim().isEmpty()) {
+            throw new IllegalArgumentException("Mật khẩu không được để trống!");
+        }
+        if (request.getFullName() == null || request.getFullName().trim().isEmpty()) {
+            throw new IllegalArgumentException("Họ tên không được để trống!");
+        }
+
+        String username = request.getUsername().trim();
+        String email = request.getEmail().trim().toLowerCase();
+        String fullName = request.getFullName().trim();
+
+        if (userRepository.existsByUsername(username)) {
             throw new IllegalArgumentException("Tên đăng nhập đã tồn tại!");
         }
-        if (userRepository.existsByEmail(request.getEmail())) {
+        if (userRepository.existsByEmail(email)) {
             throw new IllegalArgumentException("Email đã được sử dụng!");
         }
 
         User user = new User();
-        user.setUsername(request.getUsername());
-        user.setEmail(request.getEmail());
+        user.setUsername(username);
+        user.setEmail(email);
         user.setPasswordHash(passwordEncoder.encode(request.getPassword()));
-        user.setFullName(request.getFullName());
+        user.setFullName(fullName);
         user.setStatus("ACTIVE");
+        user.setLoaiDangNhap("LOCAL");
 
+        Set<Role> roles;
         if (request.getRoleCodes() != null && !request.getRoleCodes().isEmpty()) {
-            Set<Role> roles = request.getRoleCodes().stream()
+            roles = request.getRoleCodes().stream()
+                    .map(String::trim)
+                    .map(String::toUpperCase)
                     .map(code -> roleRepository.findByCode(code)
                             .orElseThrow(() -> new IllegalArgumentException("Không tìm thấy quyền " + code)))
                     .collect(Collectors.toSet());
@@ -60,9 +87,33 @@ public class UserService {
         } else {
             Role customerRole = roleRepository.findByCode("CUSTOMER")
                     .orElseThrow(() -> new RuntimeException("Lỗi: Role CUSTOMER chưa được tạo!"));
-            user.setRoles(Set.of(customerRole));
+            roles = Set.of(customerRole);
+            user.setRoles(roles);
         }
-        userRepository.save(user);
+
+        User savedUser = userRepository.save(user);
+
+        boolean isCustomer = roles.stream()
+                .anyMatch(role -> "CUSTOMER".equalsIgnoreCase(role.getCode()));
+
+        if (isCustomer) {
+            if (customerRepository.existsByEmail(email)) {
+                throw new IllegalArgumentException("Email đã tồn tại trong danh sách khách hàng!");
+            }
+
+            Customer customer = new Customer();
+            customer.setTen(fullName);
+            customer.setEmail(email);
+            customer.setPhone(null);
+            customer.setNgaySinh(null);
+            customer.setDiemTichLuy(0);
+            customer.setLoaiKhach("BRONZE");
+            customer.setStatus("ACTIVE");
+            customer.setGhiChu("Tạo tự động từ tài khoản người dùng: " + username);
+            customer.setUser(savedUser);
+
+            customerRepository.save(customer);
+        }
     }
 
     // 🔥 ĐÃ NÂNG CẤP CAMERA: Bắt sự thay đổi Họ tên, Email, Quyền

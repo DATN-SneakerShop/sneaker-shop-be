@@ -235,7 +235,8 @@ public class VoucherService {
         voucherRepository.save(voucher);
     }
     public List<Voucher> getAvailableVouchers(Long customerId) {
-        return voucherRepository.findAvailableVouchers(LocalDateTime.now(), customerId);
+        // Gửi thẳng customerId xuống (có thể là số hoặc null). Logic SQL sẽ tự phân loại Khách lẻ hay Khách có TK
+        return voucherRepository.findAvailableVouchersForOrder(LocalDateTime.now(), customerId);
     }
 
     @Scheduled(cron = "0 0 0 1 * *")
@@ -265,4 +266,5 @@ public class VoucherService {
 
         voucherRepository.save(v);
     }
+
 }

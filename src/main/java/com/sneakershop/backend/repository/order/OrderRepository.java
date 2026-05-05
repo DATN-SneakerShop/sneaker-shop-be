@@ -26,7 +26,29 @@ public interface OrderRepository extends JpaRepository<Order, Long> {
 
     List<Order> findAllByReturnStatusAndDeletedFalseOrderByCreatedAtDesc(ReturnStatus returnStatus);
 
+    List<Order> findByCustomerIdOrderByCreatedAtDesc(Long customerId);
+
+    Optional<Order> findByIdAndCustomerId(Long id, Long customerId);
+    Optional<Order> findFirstByOrderCodeIgnoreCase(String orderCode);
+    Optional<Order> findFirstByLookupCodeIgnoreCase(String lookupCode);
+
+    Optional<Order> findFirstByOrderCodeIgnoreCaseAndOrdererEmailIgnoreCase(String orderCode, String email);
+
+    Optional<Order> findFirstByLookupCodeIgnoreCaseAndOrdererEmailIgnoreCase(String lookupCode, String email);
+
+    Optional<Order> findFirstByOrderCodeIgnoreCaseAndOrdererPhone(String orderCode, String phone);
+
+    Optional<Order> findFirstByLookupCodeIgnoreCaseAndOrdererPhone(String lookupCode, String phone);
+
+    Optional<Order> findFirstByOrderCodeIgnoreCaseAndReceiverPhone(String orderCode, String phone);
+
+    Optional<Order> findFirstByLookupCodeIgnoreCaseAndReceiverPhone(String lookupCode, String phone);
+
+    Optional<Order> findByOrderCodeAndLookupCodeAndDeletedFalse(String orderCode, String lookupCode);
+
     boolean existsByOrderCode(String orderCode);
+
+    Optional<Order> findByOrderCodeAndDeletedFalse(String orderCode);
 
     @Query("""
         select new com.sneakershop.backend.dto.customer.CustomerHistoryDTO(

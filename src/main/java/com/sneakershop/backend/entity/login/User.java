@@ -1,6 +1,7 @@
 package com.sneakershop.backend.entity.login;
 
 import com.fasterxml.jackson.annotation.JsonIgnore;
+import com.sneakershop.backend.entity.customer.Customer;
 import lombok.Data;
 import lombok.ToString;
 import lombok.EqualsAndHashCode;
@@ -12,8 +13,8 @@ import java.util.Set;
 @Entity
 @Table(name = "nguoi_dung")
 @Data
-@ToString(exclude = {"roles", "auditLogs"})
-@EqualsAndHashCode(exclude = {"roles", "auditLogs"})
+@ToString(exclude = {"roles", "auditLogs", "customer"}) // Đã thêm customer
+@EqualsAndHashCode(exclude = {"roles", "auditLogs", "customer"}) // Đã thêm customer
 public class User {
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
@@ -41,12 +42,14 @@ public class User {
     @Column(name = "loai_dang_nhap", length = 20)
     private String loaiDangNhap = "LOCAL";
 
-    // Trường mới cho OTP
     @Column(name = "otp_code", length = 6)
     private String otpCode;
 
     @Column(name = "otp_expiry")
     private LocalDateTime otpExpiry;
+
+    @OneToOne(mappedBy = "user")
+    private Customer customer;
 
     @ManyToMany(fetch = FetchType.EAGER)
     @JoinTable(

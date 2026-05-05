@@ -2,11 +2,14 @@ package com.sneakershop.backend.entity.product;
 
 import com.fasterxml.jackson.annotation.JsonIgnore;
 import com.sneakershop.backend.entity.promotion.PromotionDetail;
-import com.sneakershop.backend.entity.pricing.ProductPrice;
 import com.sneakershop.backend.entity.pricing.VariantPriceGroup;
 
 import lombok.Getter;
 import lombok.Setter;
+
+// Import 2 thư viện này để dùng Soft Delete
+import org.hibernate.annotations.SQLDelete;
+import org.hibernate.annotations.Where;
 
 import javax.persistence.*;
 import java.math.BigDecimal;
@@ -19,12 +22,12 @@ import java.util.List;
         name = "product_variant",
         uniqueConstraints = {
                 @UniqueConstraint(columnNames = "sku"),
-                @UniqueConstraint(
-                        // 🔥 ĐÃ FIX: Sửa lại tên cột cho khớp với Khóa Ngoại (FK) bên dưới
-                        columnNames = {"product_id", "size_id", "color_id", "material_id", "sole_id"}
-                )
+                @UniqueConstraint(columnNames = {"product_id", "size_id", "color_id"})
         }
 )
+// 🔥 BẬT CƠ CHẾ XÓA MỀM (SOFT DELETE)
+@SQLDelete(sql = "UPDATE product_variant SET is_deleted = true WHERE id=?")
+@Where(clause = "is_deleted = false") // Tự động ẩn các bản ghi đã xóa khi lấy dữ liệu
 public class ProductVariant {
 
     @Id
@@ -34,8 +37,12 @@ public class ProductVariant {
     @Column(nullable = false, unique = true)
     private String sku;
 
+    // 🔥 TRƯỜNG MỚI: Đánh dấu xóa mềm
+    @Column(name = "is_deleted")
+    private boolean isDeleted = false;
+
     // ==========================================
-    // 🔥 LIÊN KẾT KHÓA NGOẠI (FK) CHUẨN CHỈ
+    // LIÊN KẾT KHÓA NGOẠI (FK)
     // ==========================================
 
     @ManyToOne(fetch = FetchType.LAZY)
@@ -46,20 +53,17 @@ public class ProductVariant {
     @JoinColumn(name = "color_id")
     private Color color;
 
-    @ManyToOne(fetch = FetchType.LAZY)
-    @JoinColumn(name = "material_id")
-    private Material material;
-
-    @ManyToOne(fetch = FetchType.LAZY)
-    @JoinColumn(name = "sole_id")
-    private Sole sole;
-
     // ==========================================
 
     @Column(name = "image_url")
     private String imageUrl;
 
     private int stock;
+
+    // 🔥 Set giá trị mặc định là 0 ở cả tầng Java và Database
+    @Column(name = "reserved_quantity", columnDefinition = "int default 0")
+    private int reserved_quantity = 0;
+
     private String status;
 
     @Column
@@ -81,7 +85,5 @@ public class ProductVariant {
     @JsonIgnore
     private List<VariantPriceGroup> variantPriceGroups;
 
-    @OneToMany(mappedBy = "variant", cascade = CascadeType.ALL, orphanRemoval = true)
-    @JsonIgnore
-    private List<ProductPrice> productPrices;
+    // ❌ ĐÃ XÓA: private List<ProductPrice> productPrices;
 }

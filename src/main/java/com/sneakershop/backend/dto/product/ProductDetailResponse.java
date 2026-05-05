@@ -19,6 +19,7 @@ public class ProductDetailResponse {
     private String status;
 
     private String material;
+    private String sole;
     private Boolean limited;
 
     private String description;

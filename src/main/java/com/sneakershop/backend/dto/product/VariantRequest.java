@@ -9,8 +9,6 @@ public class VariantRequest {
     private String sku;
     private String size;
     private String colorway;
-    private String material; // 🔥 Thêm mới
-    private String sole;     // 🔥 Thêm mới
     private String imageUrl;
     private BigDecimal price;
     private BigDecimal salePrice;

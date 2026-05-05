@@ -10,9 +10,6 @@ public class VariantResponse {
     private String colorway;
     private String size;
 
-    // 👇 Thêm 3 trường này để hết báo lỗi đỏ ở ProductService
-    private String material;
-    private String sole;
     private BigDecimal salePrice;
 
     private BigDecimal price;

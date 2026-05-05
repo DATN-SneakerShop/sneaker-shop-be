@@ -13,13 +13,26 @@ import java.util.Optional;
 
 public interface ProductRepository extends JpaRepository<Product, Long>, JpaSpecificationExecutor<Product> {
 
+    /**
+     * Kiểm tra xem mã SKU đã tồn tại trong hệ thống chưa
+     */
     boolean existsBySku(String sku);
 
+    /**
+     * Lấy danh sách sản phẩm phân trang, sắp xếp theo thời gian cập nhật mới nhất
+     */
     Page<Product> findAllByOrderByUpdatedAtDesc(Pageable pageable);
 
+    /**
+     * Lấy chi tiết sản phẩm kèm theo danh sách categories (sử dụng fetch join để tránh lỗi N+1 query)
+     */
     @Query("select distinct p from Product p left join fetch p.categories where p.id = :id")
     Optional<Product> findDetailById(@Param("id") Long id);
 
+    /**
+     * Tìm kiếm sản phẩm theo từ khóa và danh sách categories (Lọc AND - sản phẩm phải có đủ các category được truyền vào)
+     * Lưu ý: Không gọi hàm này nếu categoryIds rỗng (empty), sẽ gây lỗi SQL syntax ở mệnh đề IN.
+     */
     @Query("""
         select p
         from Product p
@@ -37,6 +50,9 @@ public interface ProductRepository extends JpaRepository<Product, Long>, JpaSpec
             Pageable pageable
     );
 
+    /**
+     * Lấy danh sách sản phẩm bán chạy nhất dựa trên tổng số lượng trong các OrderItem
+     */
     @Query("""
         select p from Product p
         left join p.variants v
@@ -46,6 +62,9 @@ public interface ProductRepository extends JpaRepository<Product, Long>, JpaSpec
     """)
     Page<Product> findBestSellingProducts(Pageable pageable);
 
+    /**
+     * Lấy danh sách sản phẩm dạng DTO rút gọn kèm theo tổng số biến thể (variants) của nó
+     */
     @Query("""
         select new com.sneakershop.backend.dto.product.ProductSimpleResponse(
             p.id, p.name, p.brand, p.thumbnail, count(v.id), 0L
@@ -57,6 +76,10 @@ public interface ProductRepository extends JpaRepository<Product, Long>, JpaSpec
     """)
     List<ProductSimpleResponse> findAllSimpleWithVariantCount();
 
+    /**
+     * Lấy danh sách sản phẩm dạng DTO rút gọn để hiển thị trong màn hình Edit Khuyến mãi,
+     * kèm theo số lượng variant đang tham gia vào promotionId được chỉ định
+     */
     @Query("""
         select new com.sneakershop.backend.dto.product.ProductSimpleResponse(
             p.id, p.name, p.brand, p.thumbnail, count(distinct v.id), count(distinct pd.id)
@@ -69,6 +92,9 @@ public interface ProductRepository extends JpaRepository<Product, Long>, JpaSpec
     """)
     List<ProductSimpleResponse> findAllSimpleForPromotionEdit(@Param("promotionId") Long promotionId);
 
+    /**
+     * Lấy danh sách các sản phẩm còn hàng (có ít nhất 1 biến thể có stock > 0)
+     */
     @Query("""
         select distinct p
         from Product p
@@ -77,6 +103,9 @@ public interface ProductRepository extends JpaRepository<Product, Long>, JpaSpec
     """)
     Page<Product> findProductsInStock(Pageable pageable);
 
+    /**
+     * Lấy danh sách sản phẩm đang nằm trong một chương trình khuyến mãi cụ thể
+     */
     @Query("""
         select distinct p
         from Product p
@@ -90,6 +119,9 @@ public interface ProductRepository extends JpaRepository<Product, Long>, JpaSpec
             Pageable pageable
     );
 
+    /**
+     * Kiểm tra xem sản phẩm có đang trong chương trình khuyến mãi nào đang active và trong thời gian hiệu lực hay không
+     */
     @Query("""
         select count(pr) > 0
         from Product p
@@ -106,6 +138,9 @@ public interface ProductRepository extends JpaRepository<Product, Long>, JpaSpec
             @Param("now") LocalDateTime now
     );
 
+    /**
+     * Đếm tổng số lượng đã bán của một sản phẩm
+     */
     @Query("""
         select coalesce(sum(oi.quantity),0)
         from OrderItem oi
@@ -113,6 +148,9 @@ public interface ProductRepository extends JpaRepository<Product, Long>, JpaSpec
     """)
     Long countSoldByProduct(@Param("productId") Long productId);
 
+    /**
+     * Tìm sản phẩm còn hàng được tạo trong khoảng thời gian cụ thể (sử dụng dấu < cho end)
+     */
     @Query("""
         select p
         from Product p
@@ -129,6 +167,9 @@ public interface ProductRepository extends JpaRepository<Product, Long>, JpaSpec
             Pageable pageable
     );
 
+    /**
+     * Tìm sản phẩm còn hàng được tạo trong khoảng thời gian cụ thể (sử dụng dấu <= cho end)
+     */
     @Query("""
         select p
         from Product p
@@ -144,4 +185,15 @@ public interface ProductRepository extends JpaRepository<Product, Long>, JpaSpec
             @Param("end") LocalDateTime end,
             Pageable pageable
     );
+
+    @Query("""
+    select distinct p
+    from Product p
+    left join fetch p.variants v
+    left join fetch v.color
+    left join fetch v.size
+    where (p.deleted is null or p.deleted = false)
+      and (p.status is null or lower(p.status) <> lower('Ngừng bán'))
+""")
+    List<Product> findAllForStorefrontHome();
 }

@@ -1,6 +1,9 @@
 package com.sneakershop.backend.controller.customer;
 
 import com.sneakershop.backend.audit.SystemAuditLogService;
+import com.sneakershop.backend.exception.OutOfStockException;
+import com.sneakershop.backend.exception.PaymentException;
+import com.sneakershop.backend.exception.VoucherInvalidException;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
@@ -17,6 +20,22 @@ public class GlobalExceptionHandler {
 
     private final SystemAuditLogService auditLogService;
     private final HttpServletRequest request;
+
+
+    @ExceptionHandler(OutOfStockException.class)
+    public ResponseEntity<String> handleOutOfStock(OutOfStockException e) {
+        return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(e.getMessage());
+    }
+
+    @ExceptionHandler(VoucherInvalidException.class)
+    public ResponseEntity<String> handleVoucherInvalid(VoucherInvalidException e) {
+        return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(e.getMessage());
+    }
+
+    @ExceptionHandler(PaymentException.class)
+    public ResponseEntity<String> handlePaymentException(PaymentException e) {
+        return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(e.getMessage());
+    }
 
     @ExceptionHandler(RuntimeException.class)
     public ResponseEntity<String> handleRuntimeException(RuntimeException e) {

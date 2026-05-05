@@ -2,19 +2,26 @@ package com.sneakershop.backend.controller.login;
 
 import com.sneakershop.backend.audit.SystemAuditLogService;
 import com.sneakershop.backend.config.JwtTokenProvider;
+import com.sneakershop.backend.dto.login.CurrentAccountResponse;
+import com.sneakershop.backend.dto.login.CurrentAddressResponse;
+import com.sneakershop.backend.dto.login.CurrentCustomerResponse;
 import com.sneakershop.backend.dto.login.LoginRequest;
+import com.sneakershop.backend.dto.login.UpdateCurrentCustomerRequest;
+import com.sneakershop.backend.dto.login.UpsertCurrentAddressRequest;
 import com.sneakershop.backend.dto.login.UserRequest;
 import com.sneakershop.backend.entity.login.Role;
 import com.sneakershop.backend.entity.login.User;
 import com.sneakershop.backend.repository.login.UserRepository;
 import com.sneakershop.backend.service.login.AuthService;
 import lombok.RequiredArgsConstructor;
+import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.web.bind.annotation.*;
 
 import javax.servlet.http.HttpServletRequest;
 import javax.validation.Valid;
+import java.security.Principal;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -56,7 +63,6 @@ public class AuthController {
         return generateAuthResponse(user);
     }
 
-    // 🔥 API MỚI: NHẬN TOKEN TỪ FRONTEND GỬI XUỐNG
     @PostMapping("/google")
     public ResponseEntity<?> googleLogin(@RequestBody Map<String, String> body, HttpServletRequest request) {
         try {
@@ -64,9 +70,89 @@ public class AuthController {
             User user = authService.loginWithGoogle(credential, request.getRemoteAddr());
             return generateAuthResponse(user);
         } catch (Exception e) {
-            auditLogService.logManual("GUEST", request.getRemoteAddr(), "SECURITY", "LOGIN_FAILED", "User", "Đăng nhập Google thất bại", "FAILED", e.getMessage(), "WARNING");
+            auditLogService.logManual(
+                    "GUEST",
+                    request.getRemoteAddr(),
+                    "SECURITY",
+                    "LOGIN_FAILED",
+                    "User",
+                    "Đăng nhập Google thất bại",
+                    "FAILED",
+                    e.getMessage(),
+                    "WARNING"
+            );
             return ResponseEntity.status(401).body("Xác thực Google thất bại: " + e.getMessage());
         }
+    }
+
+    @GetMapping("/me")
+    public ResponseEntity<?> getCurrentAccount(Principal principal) {
+        if (principal == null) {
+            return ResponseEntity.status(HttpStatus.UNAUTHORIZED).body("Bạn chưa đăng nhập");
+        }
+
+        CurrentAccountResponse response = authService.getCurrentAccount(principal.getName());
+        return ResponseEntity.ok(response);
+    }
+
+    @PutMapping("/me/customer")
+    public ResponseEntity<?> updateCurrentCustomer(
+            Principal principal,
+            @RequestBody UpdateCurrentCustomerRequest request
+    ) {
+        if (principal == null) {
+            return ResponseEntity.status(HttpStatus.UNAUTHORIZED).body("Bạn chưa đăng nhập");
+        }
+
+        CurrentCustomerResponse response = authService.updateCurrentCustomer(principal.getName(), request);
+        return ResponseEntity.ok(response);
+    }
+
+    @GetMapping("/me/addresses")
+    public ResponseEntity<?> getCurrentAddresses(Principal principal) {
+        if (principal == null) {
+            return ResponseEntity.status(HttpStatus.UNAUTHORIZED).body("Bạn chưa đăng nhập");
+        }
+
+        List<CurrentAddressResponse> response = authService.getCurrentAddresses(principal.getName());
+        return ResponseEntity.ok(response);
+    }
+
+    @PostMapping("/me/addresses")
+    public ResponseEntity<?> createCurrentAddress(
+            Principal principal,
+            @RequestBody UpsertCurrentAddressRequest request
+    ) {
+        if (principal == null) {
+            return ResponseEntity.status(HttpStatus.UNAUTHORIZED).body("Bạn chưa đăng nhập");
+        }
+
+        CurrentAddressResponse response = authService.createCurrentAddress(principal.getName(), request);
+        return ResponseEntity.ok(response);
+    }
+
+    @PutMapping("/me/addresses/{addressId}")
+    public ResponseEntity<?> updateCurrentAddress(
+            Principal principal,
+            @PathVariable Long addressId,
+            @RequestBody UpsertCurrentAddressRequest request
+    ) {
+        if (principal == null) {
+            return ResponseEntity.status(HttpStatus.UNAUTHORIZED).body("Bạn chưa đăng nhập");
+        }
+
+        CurrentAddressResponse response = authService.updateCurrentAddress(principal.getName(), addressId, request);
+        return ResponseEntity.ok(response);
+    }
+
+    @DeleteMapping("/me/addresses/{addressId}")
+    public ResponseEntity<?> deleteCurrentAddress(Principal principal, @PathVariable Long addressId) {
+        if (principal == null) {
+            return ResponseEntity.status(HttpStatus.UNAUTHORIZED).body("Bạn chưa đăng nhập");
+        }
+
+        authService.deleteCurrentAddress(principal.getName(), addressId);
+        return ResponseEntity.ok("Xóa địa chỉ thành công");
     }
 
     @PostMapping("/forgot-password")

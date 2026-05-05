@@ -17,6 +17,9 @@ public class ProductResponse {
     private String gender;
     private String releaseType;
 
+    private String material;
+    private String sole;
+
     private String thumbnail;        // URL ảnh
     private Boolean isNew;
     private Boolean isHot;
