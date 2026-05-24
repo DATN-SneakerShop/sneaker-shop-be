@@ -90,6 +90,8 @@ public class StorefrontProductService {
                     x.setColorway(v.getColor() != null ? v.getColor().getName() : null);
                     x.setImageUrl(v.getImageUrl());
                     x.setStock(getAvailableStock(v));
+                    x.setReservedQuantity(Math.max(v.getReserved_quantity(), 0));
+                    x.setAvailableStock(getAvailableStock(v));
                     x.setStatus(v.getStatus());
 
                     // Yêu cầu sửa: Cập nhật logic giá cho variant
@@ -145,6 +147,8 @@ public class StorefrontProductService {
                     x.setColorway(v.getColor() != null ? v.getColor().getName() : null);
                     x.setSize(v.getSize() != null ? v.getSize().getName() : null);
                     x.setStock(getAvailableStock(v));
+                    x.setReservedQuantity(Math.max(v.getReserved_quantity(), 0));
+                    x.setAvailableStock(getAvailableStock(v));
                     x.setImageUrl(v.getImageUrl());
                     x.setOriginalPrice(originalPrice);
                     x.setSalePrice(salePrice);

@@ -4,6 +4,8 @@ import com.sneakershop.backend.audit.AuditAction;
 import com.sneakershop.backend.dto.product.*;
 import com.sneakershop.backend.entity.product.*;
 import com.sneakershop.backend.repository.product.*;
+import com.sneakershop.backend.exception.ValidationException;
+import com.sneakershop.backend.service.ValidationSupport;
 import com.sneakershop.backend.repository.promotion.PromotionRepository;
 import lombok.RequiredArgsConstructor;
 import org.springframework.data.domain.*;
@@ -16,6 +18,8 @@ import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
+import java.util.HashSet;
+import java.util.Set;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
@@ -68,9 +72,10 @@ public class ProductService {
     @Transactional
     @AuditAction(module = "PRODUCT", action = "CREATE", entity = "Product", description = "Thêm SP mới")
     public ProductResponse create(ProductRequest request) {
+        validateProductRequest(request, null);
         Product product = new Product();
-        product.setName(request.getName());
-        product.setSku(request.getSku());
+        product.setName(ValidationSupport.trim(request.getName()));
+        product.setSku(ValidationSupport.trim(request.getSku()));
 
         product.setBrand(request.getBrand());
         product.setModel(request.getModel());
@@ -117,7 +122,7 @@ public class ProductService {
                 v.setStatus(vReq.getStock() > 0 ? "Còn hàng" : "Hết hàng");
 
                 if (vReq.getSku() != null && !vReq.getSku().trim().isEmpty()) {
-                    v.setSku(vReq.getSku().trim());
+                    v.setSku(ValidationSupport.trim(vReq.getSku()));
                 } else {
                     v.setSku(generateVariantSku(product, vReq));
                 }
@@ -152,7 +157,10 @@ public class ProductService {
         saveHistory(id, "material", p.getMaterial() != null ? p.getMaterial().getName() : null, request.getMaterial());
         saveHistory(id, "sole", p.getSole() != null ? p.getSole().getName() : null, request.getSole());
 
-        p.setName(request.getName());
+        validateProductRequest(request, id);
+
+        p.setName(ValidationSupport.trim(request.getName()));
+        p.setSku(ValidationSupport.trim(request.getSku()));
         p.setBrand(request.getBrand());
         p.setModel(request.getModel());
         p.setReleaseYear(request.getReleaseYear());
@@ -342,6 +350,8 @@ public class ProductService {
                 vRes.setColorway(v.getColor() != null ? v.getColor().getName() : null);
                 vRes.setImageUrl(v.getImageUrl());
                 vRes.setStock(v.getStock());
+                vRes.setReservedQuantity(Math.max(v.getReserved_quantity(), 0));
+                vRes.setAvailableStock(Math.max(0, v.getStock() - Math.max(v.getReserved_quantity(), 0)));
                 vRes.setPrice(v.getPrice() != null ? v.getPrice() : BigDecimal.ZERO);
                 return vRes;
             }).collect(Collectors.toList()));
@@ -366,9 +376,72 @@ public class ProductService {
                     vr.setSize(v.getSize() != null ? v.getSize().getName() : null);
                     vr.setColorway(v.getColor() != null ? v.getColor().getName() : null);
                     vr.setStock(v.getStock());
+                    vr.setReservedQuantity(Math.max(v.getReserved_quantity(), 0));
+                    vr.setAvailableStock(Math.max(0, v.getStock() - Math.max(v.getReserved_quantity(), 0)));
                     vr.setPrice(v.getPrice() != null ? v.getPrice() : BigDecimal.ZERO);
                     return vr;
                 }).collect(Collectors.toList());
+    }
+
+
+    private void validateProductRequest(ProductRequest request, Long currentProductId) {
+        String name = ValidationSupport.trim(request.getName());
+        String sku = ValidationSupport.trim(request.getSku());
+        if (name == null) throw new ValidationException("name", "Tên sản phẩm không được để trống.");
+        if (sku == null) throw new ValidationException("sku", "Mã sản phẩm không được để trống.");
+        request.setName(name);
+        request.setSku(sku);
+
+        boolean duplicateName = currentProductId == null
+                ? productRepository.existsByNameNormalized(name)
+                : productRepository.existsByNameNormalizedAndIdNot(name, currentProductId);
+        if (duplicateName) throw new ValidationException("name", "Tên sản phẩm đã tồn tại.");
+
+        boolean duplicateSku = currentProductId == null
+                ? productRepository.existsBySkuNormalized(sku)
+                : productRepository.existsBySkuNormalizedAndIdNot(sku, currentProductId);
+        if (duplicateSku) throw new ValidationException("sku", "Mã sản phẩm đã được sử dụng.");
+
+        validateVariantPayload(request.getVariants(), currentProductId);
+    }
+
+    private void validateVariantPayload(List<VariantRequest> variants, Long productId) {
+        if (variants == null || variants.isEmpty()) return;
+        Set<String> skuSet = new HashSet<>();
+        Set<String> comboSet = new HashSet<>();
+        for (VariantRequest vReq : variants) {
+            String sku = ValidationSupport.trim(vReq.getSku());
+            if (sku != null) {
+                vReq.setSku(sku);
+                String skuKey = sku.toLowerCase();
+                if (!skuSet.add(skuKey)) throw new ValidationException("sku", "SKU đã được sử dụng.");
+                boolean duplicateSku = vReq.getId() == null
+                        ? productVariantRepository.existsBySkuNormalized(sku)
+                        : productVariantRepository.existsBySkuNormalizedAndIdNot(sku, vReq.getId());
+                if (duplicateSku) throw new ValidationException("sku", "Mã SKU biến thể đã được sử dụng.");
+            }
+            String size = ValidationSupport.trim(vReq.getSize());
+            String color = ValidationSupport.trim(vReq.getColorway());
+            vReq.setSize(size);
+            vReq.setColorway(color);
+            String comboKey = (size == null ? "" : size.toLowerCase()) + "|" + (color == null ? "" : color.toLowerCase());
+            if (!comboSet.add(comboKey)) {
+                throw new ValidationException("variants", "Biến thể Size " + (size == null ? "" : size) + " - Màu " + (color == null ? "" : color) + " đã tồn tại.");
+            }
+            if (productId != null && size != null && color != null) {
+                Size resolvedSize = mapSize(size);
+                Color resolvedColor = mapColor(color);
+                if (resolvedSize != null && resolvedSize.getId() != null && resolvedColor != null && resolvedColor.getId() != null) {
+                    boolean duplicateCombo = vReq.getId() == null
+                            ? productVariantRepository.existsByProductSizeColor(productId, resolvedSize.getId(), resolvedColor.getId())
+                            : productVariantRepository.existsByProductSizeColorAndIdNot(productId, resolvedSize.getId(), resolvedColor.getId(), vReq.getId());
+                    if (duplicateCombo) {
+                        throw new ValidationException("variants", "Biến thể Size " + size + " - Màu " + color + " đã tồn tại.");
+                    }
+                }
+            }
+            if (vReq.getStock() < 0) throw new ValidationException("stock", "Số lượng sản phẩm không hợp lệ.");
+        }
     }
 
     private String generateVariantSku(Product product, VariantRequest v) {

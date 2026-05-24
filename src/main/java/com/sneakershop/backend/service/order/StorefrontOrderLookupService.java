@@ -4,7 +4,13 @@ import com.sneakershop.backend.dto.order.storefront.StorefrontOrderDetailRespons
 import com.sneakershop.backend.dto.order.storefront.StorefrontOrderItemResponse;
 import com.sneakershop.backend.entity.order.Order;
 import com.sneakershop.backend.entity.order.OrderItem;
+import com.sneakershop.backend.entity.order.PaymentTransaction;
+import com.sneakershop.backend.entity.order.enums.PaymentMethod;
+import com.sneakershop.backend.entity.order.enums.PaymentStatus;
+import com.sneakershop.backend.entity.order.enums.TransactionStatus;
+import com.sneakershop.backend.entity.order.enums.TransactionType;
 import com.sneakershop.backend.repository.order.OrderRepository;
+import com.sneakershop.backend.repository.order.PaymentTransactionRepository;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
@@ -12,12 +18,15 @@ import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.server.ResponseStatusException;
 
 import java.util.stream.Collectors;
+import java.math.BigDecimal;
 
 @Service
 @RequiredArgsConstructor
 public class StorefrontOrderLookupService {
 
     private final OrderRepository orderRepository;
+    private final PaymentTransactionRepository paymentTransactionRepository;
+    private final SepayService sepayService;
 
     @Transactional(readOnly = true)
     public StorefrontOrderDetailResponse lookup(String keyword) {
@@ -105,11 +114,55 @@ public class StorefrontOrderLookupService {
         dto.setCancelledAt(order.getCancelledAt());
         dto.setReturnedAt(order.getReturnedAt());
 
+        enrichPublicPaymentInfo(dto, order);
+
         if (order.getItems() != null) {
             dto.setItems(order.getItems().stream().map(this::mapItem).collect(Collectors.toList()));
         }
 
         return dto;
+    }
+
+    private void enrichPublicPaymentInfo(StorefrontOrderDetailResponse dto, Order order) {
+        if (!PaymentMethod.BANK_TRANSFER.equals(order.getPaymentMethod())) {
+            return;
+        }
+
+        BigDecimal expectedAmount = order.getFinalAmount() == null ? BigDecimal.ZERO : order.getFinalAmount();
+        dto.setPaymentExpectedAmount(expectedAmount);
+
+        PaymentTransaction tx = paymentTransactionRepository
+                .findTopByOrder_IdAndTransactionTypeOrderByCreatedAtDesc(order.getId(), TransactionType.PAYMENT)
+                .orElseGet(() -> {
+                    PaymentTransaction created = new PaymentTransaction();
+                    created.setOrder(order);
+                    created.setTransactionType(TransactionType.PAYMENT);
+                    created.setPaymentMethod(PaymentMethod.BANK_TRANSFER);
+                    created.setStatus(TransactionStatus.PENDING);
+                    created.setRequestAmount(expectedAmount);
+                    created.setActualAmount(BigDecimal.ZERO);
+                    created.setProvider("SEPAY");
+                    created.setIdempotencyKey(sepayService.buildPaymentCode(order.getId()));
+                    return created;
+                });
+
+        dto.setPaymentActualAmount(tx.getActualAmount() == null ? BigDecimal.ZERO : tx.getActualAmount());
+        dto.setPaymentCode(tx.getIdempotencyKey());
+        dto.setTransferContent(tx.getIdempotencyKey());
+        dto.setBankCode(sepayService.getBankCode());
+        dto.setBankName(sepayService.getBankName());
+        dto.setBankAccountNo(sepayService.getBankAccountNo());
+        dto.setBankAccountName(sepayService.getAccountName());
+
+        if (PaymentStatus.FAILED.equals(order.getPaymentStatus()) || TransactionStatus.FAILED.equals(tx.getStatus())) {
+            dto.setPaymentErrorMessage("Thanh toán chuyển khoản lỗi. Bạn đã chuyển sai số tiền. Vui lòng liên hệ admin để được xử lý.");
+            return;
+        }
+
+        if ((PaymentStatus.UNPAID.equals(order.getPaymentStatus()) || PaymentStatus.PENDING.equals(order.getPaymentStatus()))
+                && sepayService.isEnabled()) {
+            dto.setQrImageUrl(sepayService.buildQrImageUrl(expectedAmount, tx.getIdempotencyKey()));
+        }
     }
 
     private StorefrontOrderItemResponse mapItem(OrderItem item) {

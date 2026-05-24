@@ -51,6 +51,17 @@ public class StorefrontOrderDetailResponse {
     private BigDecimal returnedAmount;
     private BigDecimal finalAmount;
 
+    private BigDecimal paymentExpectedAmount;
+    private BigDecimal paymentActualAmount;
+    private String paymentCode;
+    private String bankCode;
+    private String bankName;
+    private String bankAccountNo;
+    private String bankAccountName;
+    private String transferContent;
+    private String qrImageUrl;
+    private String paymentErrorMessage;
+
     private String voucherCode;
     private String voucherNameSnapshot;
     private String voucherTypeSnapshot;

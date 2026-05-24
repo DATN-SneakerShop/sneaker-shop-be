@@ -1,6 +1,8 @@
 package com.sneakershop.backend.service.product;
 
 import com.sneakershop.backend.audit.AuditAction;
+import com.sneakershop.backend.exception.ValidationException;
+import com.sneakershop.backend.service.ValidationSupport;
 import com.sneakershop.backend.dto.product.CategoryRequest;
 import com.sneakershop.backend.dto.product.CategoryResponse;
 import com.sneakershop.backend.entity.product.Category;
@@ -23,8 +25,9 @@ public class CategoryService {
     @AuditAction(module = "PRODUCT", action = "CREATE", entity = "Category",
             description = "Đã thêm mới danh mục: #{#request.name}")
     public CategoryResponse create(CategoryRequest request) {
+        validateName(request.getName(), null);
         Category c = new Category();
-        c.setName(request.getName());
+        c.setName(ValidationSupport.trim(request.getName()));
         c.setDescription(request.getDescription());
         c.setThumbnail(request.getThumbnail());
         categoryRepository.save(c);
@@ -43,7 +46,8 @@ public class CategoryService {
             description = "Đã cập nhật danh mục ID #{#id} thành tên: #{#request.name}")
     public CategoryResponse update(Long id, CategoryRequest request) {
         Category category = categoryRepository.findById(id).orElseThrow(() -> new EntityNotFoundException("Category not found: " + id));
-        category.setName(request.getName());
+        validateName(request.getName(), id);
+        category.setName(ValidationSupport.trim(request.getName()));
         category.setDescription(request.getDescription());
         category.setThumbnail(request.getThumbnail());
         return mapToResponse(category);
@@ -60,6 +64,13 @@ public class CategoryService {
             }
         }
         categoryRepository.delete(category);
+    }
+
+    private void validateName(String rawName, Long currentId) {
+        String name = ValidationSupport.trim(rawName);
+        if (name == null) throw new ValidationException("name", "Tên không được để trống.");
+        boolean duplicate = currentId == null ? categoryRepository.existsByNameNormalized(name) : categoryRepository.existsByNameNormalizedAndIdNot(name, currentId);
+        if (duplicate) throw new ValidationException("name", "Tên danh mục đã tồn tại.");
     }
 
     private CategoryResponse mapToResponse(Category category) {

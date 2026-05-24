@@ -8,6 +8,8 @@ import com.sneakershop.backend.entity.order.Order;
 import com.sneakershop.backend.entity.order.OrderItem;
 import com.sneakershop.backend.entity.order.enums.OrderStatus;
 import com.sneakershop.backend.entity.order.enums.PaymentStatus;
+import com.sneakershop.backend.entity.order.enums.PaymentMethod;
+import com.sneakershop.backend.entity.order.enums.ShippingStatus;
 import com.sneakershop.backend.entity.order.enums.ReturnStatus;
 import com.sneakershop.backend.entity.order.enums.SalesChannel;
 import com.sneakershop.backend.entity.product.ProductVariant;
@@ -70,6 +72,95 @@ public class OrderService {
         return v == null ? 0 : v;
     }
 
+    private String blankToNull(String value) {
+        return value == null || value.trim().isEmpty() ? null : value.trim();
+    }
+
+    private boolean isBlank(String value) {
+        return value == null || value.trim().isEmpty();
+    }
+
+    private void validateAdminOnlineShippingInfo(CreateOrderRequest req) {
+        if (req.getChannel() != SalesChannel.ONLINE) {
+            return;
+        }
+        if (com.sneakershop.backend.entity.order.enums.PaymentMethod.CASH.equals(req.getPaymentMethod())) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Đơn online chỉ hỗ trợ COD hoặc chuyển khoản.");
+        }
+        if (isBlank(req.getOrdererName())) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Họ tên người đặt không được để trống");
+        }
+        if (isBlank(req.getOrdererPhone())) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Số điện thoại người đặt không được để trống");
+        }
+        if (!isBlank(req.getOrdererEmail()) && !req.getOrdererEmail().trim().matches("^[^\\s@]+@[^\\s@]+\\.[^\\s@]+$")) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Email người đặt không đúng định dạng");
+        }
+        if (isBlank(req.getReceiverName())) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Người nhận không được để trống");
+        }
+        if (isBlank(req.getReceiverPhone())) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Số điện thoại nhận hàng không được để trống");
+        }
+        if (isBlank(req.getShippingProvince())) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Tỉnh / Thành phố không được để trống");
+        }
+        if (isBlank(req.getShippingDistrict())) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Quận / Huyện không được để trống");
+        }
+        if (isBlank(req.getShippingWard())) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Phường / Xã không được để trống");
+        }
+        if (isBlank(req.getShippingDetailAddress())) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Địa chỉ chi tiết không được để trống");
+        }
+    }
+
+    private String buildShippingAddressLine(CreateOrderRequest req) {
+        if (!isBlank(req.getShippingAddressLine())) {
+            return blankToNull(req.getShippingAddressLine());
+        }
+        return Arrays.asList(
+                        blankToNull(req.getShippingDetailAddress()),
+                        blankToNull(req.getShippingWard()),
+                        blankToNull(req.getShippingDistrict()),
+                        blankToNull(req.getShippingProvince())
+                )
+                .stream()
+                .filter(Objects::nonNull)
+                .collect(Collectors.joining(", "));
+    }
+
+    private void applyAdminShippingInfo(Order order, CreateOrderRequest req) {
+        if (req.getChannel() == SalesChannel.ONLINE) {
+            order.setOrdererName(blankToNull(req.getOrdererName()));
+            order.setOrdererEmail(blankToNull(req.getOrdererEmail()));
+            order.setOrdererPhone(blankToNull(req.getOrdererPhone()));
+            order.setReceiverName(blankToNull(req.getReceiverName()));
+            order.setReceiverPhone(blankToNull(req.getReceiverPhone()));
+            order.setAddressLabel(blankToNull(req.getAddressLabel()));
+            order.setShippingProvince(blankToNull(req.getShippingProvince()));
+            order.setShippingDistrict(blankToNull(req.getShippingDistrict()));
+            order.setShippingWard(blankToNull(req.getShippingWard()));
+            order.setShippingDetailAddress(blankToNull(req.getShippingDetailAddress()));
+            order.setShippingAddressLine(buildShippingAddressLine(req));
+            return;
+        }
+
+        // Đơn tại quầy không yêu cầu thông tin giao hàng. Giữ các field này null để không gây hiểu nhầm là đơn ship.
+        order.setOrdererName(null);
+        order.setOrdererEmail(null);
+        order.setOrdererPhone(null);
+        order.setReceiverName(null);
+        order.setReceiverPhone(null);
+        order.setAddressLabel(null);
+        order.setShippingProvince(null);
+        order.setShippingDistrict(null);
+        order.setShippingWard(null);
+        order.setShippingDetailAddress(null);
+        order.setShippingAddressLine(null);
+    }
+
     private String safe(Object value) {
         return value == null ? "" : String.valueOf(value);
     }
@@ -122,7 +213,7 @@ public class OrderService {
 
     private void validateQuantity(Integer quantity) {
         if (quantity == null || quantity <= 0) {
-            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Quantity must be greater than 0");
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Số lượng sản phẩm phải là số nguyên dương.");
         }
     }
 
@@ -130,25 +221,40 @@ public class OrderService {
         if (order.getOrderStatus() != OrderStatus.NEW && order.getOrderStatus() != OrderStatus.PROCESSING) {
             throw new ResponseStatusException(
                     HttpStatus.BAD_REQUEST,
-                    "Order is not editable in status: " + order.getOrderStatus()
+                    "Không thể chỉnh sửa đơn hàng ở trạng thái hiện tại."
             );
         }
     }
 
     private void assertCancelable(Order order) {
         if (order.getOrderStatus() == OrderStatus.COMPLETED) {
-            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Completed order cannot be cancelled.");
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Đơn hàng đã hoàn thành, không thể cập nhật trạng thái.");
         }
         if (order.getOrderStatus() == OrderStatus.CANCELLED) {
-            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Order already cancelled.");
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Đơn hàng đã hủy, không thể cập nhật trạng thái.");
         }
     }
 
+    private static final int RETURN_ALLOWED_DAYS = 7;
+
     private void assertReturnable(Order order) {
-        if (order.getOrderStatus() != OrderStatus.SHIPPING && order.getOrderStatus() != OrderStatus.COMPLETED) {
+        if (order.getOrderStatus() != OrderStatus.COMPLETED) {
             throw new ResponseStatusException(
                     HttpStatus.BAD_REQUEST,
-                    "Order is not returnable in status: " + order.getOrderStatus()
+                    "Chỉ đơn hàng đã hoàn thành mới được yêu cầu trả hàng."
+            );
+        }
+        LocalDateTime completedAt = order.getCompletedAt() != null ? order.getCompletedAt() : order.getDeliveredAt();
+        if (completedAt == null) {
+            throw new ResponseStatusException(
+                    HttpStatus.BAD_REQUEST,
+                    "Chỉ đơn hàng đã hoàn thành mới được yêu cầu trả hàng."
+            );
+        }
+        if (completedAt.plusDays(RETURN_ALLOWED_DAYS).isBefore(LocalDateTime.now())) {
+            throw new ResponseStatusException(
+                    HttpStatus.BAD_REQUEST,
+                    "Đơn hàng đã quá thời hạn trả hàng."
             );
         }
     }
@@ -272,14 +378,21 @@ public class OrderService {
     @Transactional
     @AuditAction(module = "ORDER", action = "CREATE", entity = "Order", description = "Đã tạo đơn hàng mới. Kênh: #{#req.channel}, Thanh toán: #{#req.paymentMethod}")
     public OrderDetailDTO create(CreateOrderRequest req) {
+        validateAdminOnlineShippingInfo(req);
+
         Order order = new Order();
         order.setOrderCode(generateOrderCode());
         order.setChannel(req.getChannel());
         order.setPaymentMethod(req.getPaymentMethod());
         order.setNote(req.getNote());
+        applyAdminShippingInfo(order, req);
 
         if (req.getChannel() == SalesChannel.OFFLINE) {
             order.setShippingFee(BigDecimal.ZERO);
+            // Case riêng OFFLINE + CASH: tạo đơn trước, admin xác nhận thanh toán sau.
+            order.setOrderStatus(OrderStatus.NEW);
+            order.setPaymentStatus(PaymentStatus.UNPAID);
+            order.setShippingStatus(com.sneakershop.backend.entity.order.enums.ShippingStatus.PENDING);
         } else {
             order.setShippingFee(nz(req.getShippingFee()));
         }
@@ -290,8 +403,8 @@ public class OrderService {
             validateQuantity(ir.getQuantity());
             ProductVariant variant = getVariantOr404(ir.getVariantId());
 
-            // 🔥 FIX: KIỂM TRA VÀ TRỪ TỒN KHO NGAY LẬP TỨC KHI TẠO ĐƠN
-            decreaseStock(variant.getId(), ir.getQuantity(), ir.getProductNameSnapshot());
+            // Chuẩn hóa tồn kho: tạo đơn chỉ giữ chỗ, khi hoàn tất/giao thành công mới trừ stock thật.
+            orderInventoryService.reserveStock(variant.getId(), ir.getQuantity(), "ORDER", order.getId(), "Giữ chỗ tồn kho khi tạo đơn admin.");
 
             OrderItem it = new OrderItem();
             it.setOrder(order);
@@ -484,45 +597,69 @@ public class OrderService {
         OrderStatus next = req.getStatus();
 
         if (next == null) {
-            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Missing status");
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Trạng thái đơn hàng không hợp lệ.");
+        }
+        if (current == OrderStatus.COMPLETED || current == OrderStatus.PARTIALLY_RETURNED || current == OrderStatus.RETURNED) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Đơn hàng đã hoàn thành, không thể cập nhật trạng thái.");
         }
         if (current == OrderStatus.CANCELLED) {
-            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Cancelled order cannot change status");
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Đơn hàng đã hủy, không thể cập nhật trạng thái.");
         }
 
         boolean valid =
-                (current == OrderStatus.NEW &&
-                        (next == OrderStatus.PROCESSING || next == OrderStatus.CANCELLED)) ||
-                        (current == OrderStatus.PROCESSING &&
-                                (next == OrderStatus.SHIPPING || next == OrderStatus.CANCELLED)) ||
-                        (current == OrderStatus.SHIPPING &&
-                                (next == OrderStatus.COMPLETED || next == OrderStatus.CANCELLED)) ||
-                        (current == OrderStatus.COMPLETED &&
-                                next == OrderStatus.COMPLETED);
+                (current == OrderStatus.NEW && (next == OrderStatus.PROCESSING || next == OrderStatus.CANCELLED)) ||
+                (current == OrderStatus.PROCESSING && (next == OrderStatus.SHIPPING || next == OrderStatus.CANCELLED)) ||
+                (current == OrderStatus.SHIPPING && (next == OrderStatus.COMPLETED || next == OrderStatus.CANCELLED));
 
         if (!valid) {
-            throw new ResponseStatusException(
-                    HttpStatus.BAD_REQUEST,
-                    "Invalid status transition from " + current + " to " + next
-            );
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Không thể chuyển trạng thái đơn hàng ở bước hiện tại.");
+        }
+
+        if (order.getChannel() == SalesChannel.ONLINE) {
+            if (next == OrderStatus.PROCESSING && order.getPaymentMethod() == PaymentMethod.BANK_TRANSFER && order.getPaymentStatus() != PaymentStatus.PAID) {
+                throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Đơn chuyển khoản chưa thanh toán đủ, không thể xác nhận xử lý.");
+            }
+            if (next == OrderStatus.SHIPPING && order.getShippingStatus() != ShippingStatus.READY_TO_SHIP && order.getShippingStatus() != ShippingStatus.SHIPPED) {
+                throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Đơn online chỉ được chuyển sang đang giao khi đã sẵn sàng giao.");
+            }
+            if (next == OrderStatus.COMPLETED) {
+                if (order.getShippingStatus() != ShippingStatus.DELIVERED) {
+                    throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Đơn online chỉ được hoàn thành khi đã giao thành công.");
+                }
+                if (order.getPaymentMethod() == PaymentMethod.BANK_TRANSFER && order.getPaymentStatus() != PaymentStatus.PAID) {
+                    throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Đơn chuyển khoản chưa thanh toán đủ, không thể hoàn thành.");
+                }
+            }
         }
 
         boolean completingNow = current != OrderStatus.COMPLETED && next == OrderStatus.COMPLETED;
         if (completingNow) {
             orderInventoryService.commitReservedStock(order);
-
             if (order.getCustomer() != null) {
-                customerService.addPointsFromOrder(order.getCustomer().getId(), nz(order.getFinalAmount()).doubleValue());
+                customerService.addPointsFromCompletedOrder(order.getCustomer().getId(), nz(order.getFinalAmount()), order.getOrderCode());
             }
+        }
+
+        if (next == OrderStatus.CANCELLED) {
+            orderInventoryService.releaseForCancellation(order);
+            order.setCancelledAt(LocalDateTime.now());
         }
 
         order.setOrderStatus(next);
 
-        if (next == OrderStatus.SHIPPING && order.getShippedAt() == null) {
-            order.setShippedAt(LocalDateTime.now());
+        if (next == OrderStatus.SHIPPING) {
+            if (order.getShippedAt() == null) order.setShippedAt(LocalDateTime.now());
+            if (order.getShippingStatus() == null || order.getShippingStatus() == ShippingStatus.READY_TO_SHIP) {
+                order.setShippingStatus(ShippingStatus.SHIPPED);
+            }
         }
-        if (next == OrderStatus.COMPLETED && order.getCompletedAt() == null) {
-            order.setCompletedAt(LocalDateTime.now());
+        if (next == OrderStatus.COMPLETED) {
+            if (order.getCompletedAt() == null) order.setCompletedAt(LocalDateTime.now());
+            if (order.getDeliveredAt() == null) order.setDeliveredAt(LocalDateTime.now());
+            order.setShippingStatus(ShippingStatus.DELIVERED);
+            if (order.getPaymentMethod() == PaymentMethod.COD && order.getPaymentStatus() != PaymentStatus.PAID) {
+                order.setPaymentStatus(PaymentStatus.PAID);
+            }
         }
 
         if (completingNow) {
@@ -558,8 +695,8 @@ public class OrderService {
             validateQuantity(ir.getQuantity());
             ProductVariant variant = getVariantOr404(ir.getVariantId());
 
-            // 🔥 FIX: TỰ ĐỘNG TRỪ KHO KHI THÊM MỚI ITEM VÀO ĐƠN
-            decreaseStock(variant.getId(), ir.getQuantity(), ir.getProductNameSnapshot());
+            // Chuẩn hóa tồn kho: thêm sản phẩm vào đơn chỉ giữ chỗ.
+            orderInventoryService.reserveStock(variant.getId(), ir.getQuantity(), "ORDER", order.getId(), "Giữ chỗ tồn kho khi thêm sản phẩm vào đơn.");
 
             OrderItem it = new OrderItem();
             it.setOrder(order);
@@ -597,11 +734,11 @@ public class OrderService {
 
         // 🔥 FIX: BÙ/TRỪ KHO THÔNG MINH KHI ĐỔI SỐ LƯỢNG TRONG ĐƠN HÀNG
         if (diff > 0) {
-            // Khách lấy thêm -> Trừ kho
-            decreaseStock(item.getVariantId(), diff, item.getProductNameSnapshot());
+            // Tăng số lượng: giữ chỗ thêm phần chênh lệch.
+            orderInventoryService.reserveStock(item.getVariantId(), diff, "ORDER", order.getId(), "Giữ chỗ thêm khi tăng số lượng sản phẩm trong đơn.");
         } else if (diff < 0) {
-            // Khách giảm số lượng -> Trả lại kho
-            increaseStock(item.getVariantId(), -diff);
+            // Giảm số lượng: nhả phần giữ chỗ tương ứng.
+            orderInventoryService.releaseReserved(item.getVariantId(), -diff, "ORDER", order.getId(), "Nhả giữ chỗ khi giảm số lượng sản phẩm trong đơn.");
         }
 
         item.setQuantity(req.getQuantity());
@@ -668,11 +805,9 @@ public class OrderService {
 
         order.setReturnedAmount(returnedAmount);
 
-        if (req.getReturnStatus() == ReturnStatus.COMPLETED && order.getOrderStatus() == OrderStatus.SHIPPING) {
-            order.setOrderStatus(OrderStatus.COMPLETED);
-            if (order.getCompletedAt() == null) {
-                order.setCompletedAt(LocalDateTime.now());
-            }
+        if (req.getReturnStatus() == ReturnStatus.COMPLETED && order.getOrderStatus() == OrderStatus.COMPLETED) {
+            boolean allReturned = defaultItems(order).stream().allMatch(i -> nzInt(i.getReturnedQuantity()) >= nzInt(i.getQuantity()));
+            order.setOrderStatus(allReturned ? OrderStatus.RETURNED : OrderStatus.PARTIALLY_RETURNED);
         }
 
         recalcOrderTotals(order);
@@ -686,7 +821,7 @@ public class OrderService {
         // TÍCH ĐIỂM CHO TRƯỜNG HỢP HOÀN TẤT ĐƠN THÔNG QUA LUỒNG TRẢ HÀNG
         if (req.getReturnStatus() == ReturnStatus.COMPLETED && order.getOrderStatus() == OrderStatus.COMPLETED && originalOrderStatus != OrderStatus.COMPLETED) {
             if (order.getCustomer() != null) {
-                customerService.addPointsFromOrder(order.getCustomer().getId(), nz(order.getFinalAmount()).doubleValue());
+                customerService.addPointsFromCompletedOrder(order.getCustomer().getId(), nz(order.getFinalAmount()), order.getOrderCode());
             }
         }
 

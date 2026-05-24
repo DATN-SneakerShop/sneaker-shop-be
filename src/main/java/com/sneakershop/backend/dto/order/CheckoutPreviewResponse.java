@@ -18,6 +18,9 @@ public class CheckoutPreviewResponse {
     private BigDecimal voucherDiscountAmount;
     private BigDecimal shippingDiscountAmount;
     private BigDecimal discountAmount;
+    private BigDecimal vipDiscountAmount;
+    private String customerRankName;
+    private Integer customerRankDiscountPercent;
     private BigDecimal shippingFee;
     private BigDecimal totalAmount;
     private BigDecimal finalAmount;

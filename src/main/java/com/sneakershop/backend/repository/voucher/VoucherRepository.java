@@ -51,4 +51,17 @@ public interface VoucherRepository extends JpaRepository<Voucher, Long> {
             "AND ((:customerId IS NULL OR :customerId = 0) OR NOT EXISTS (SELECT 1 FROM voucher_usage vu WHERE vu.voucher_id = v.id AND vu.customer_id = :customerId))",
             nativeQuery = true)
     List<Voucher> findAvailableVouchersForOrder(@Param("now") LocalDateTime now, @Param("customerId") Long customerId);
+
+    @Query("select count(v) > 0 from Voucher v where lower(trim(v.name)) = lower(trim(:name)) and (v.deleted is null or v.deleted = false)")
+    boolean existsByNameNormalized(@Param("name") String name);
+
+    @Query("select count(v) > 0 from Voucher v where lower(trim(v.name)) = lower(trim(:name)) and v.id <> :id and (v.deleted is null or v.deleted = false)")
+    boolean existsByNameNormalizedAndIdNot(@Param("name") String name, @Param("id") Long id);
+
+    @Query("select count(v) > 0 from Voucher v where lower(trim(v.code)) = lower(trim(:code))")
+    boolean existsByCodeNormalized(@Param("code") String code);
+
+    @Query("select count(v) > 0 from Voucher v where lower(trim(v.code)) = lower(trim(:code)) and v.id <> :id")
+    boolean existsByCodeNormalizedAndIdNot(@Param("code") String code, @Param("id") Long id);
+
 }

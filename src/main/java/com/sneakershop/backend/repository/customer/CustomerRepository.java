@@ -59,4 +59,17 @@ public interface CustomerRepository extends JpaRepository<Customer, Long> {
     List<CustomerVoucherDTO> findAllForVoucher();
 
     Optional<Customer> findByUser_Id(Long userId);
+
+    @Query("select count(c) > 0 from Customer c where c.email is not null and lower(trim(c.email)) = lower(trim(:email))")
+    boolean existsByEmailNormalized(@Param("email") String email);
+
+    @Query("select count(c) > 0 from Customer c where c.email is not null and lower(trim(c.email)) = lower(trim(:email)) and c.id <> :id")
+    boolean existsByEmailNormalizedAndIdNot(@Param("email") String email, @Param("id") Long id);
+
+    @Query("select count(c) > 0 from Customer c where c.phone is not null and trim(c.phone) = trim(:phone)")
+    boolean existsByPhoneNormalized(@Param("phone") String phone);
+
+    @Query("select count(c) > 0 from Customer c where c.phone is not null and trim(c.phone) = trim(:phone) and c.id <> :id")
+    boolean existsByPhoneNormalizedAndIdNot(@Param("phone") String phone, @Param("id") Long id);
+
 }

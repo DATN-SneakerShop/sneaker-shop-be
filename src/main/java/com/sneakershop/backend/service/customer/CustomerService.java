@@ -3,6 +3,8 @@ package com.sneakershop.backend.service.customer;
 import com.sneakershop.backend.audit.AuditAction;
 import com.sneakershop.backend.entity.customer.*;
 import com.sneakershop.backend.repository.customer.*;
+import com.sneakershop.backend.exception.ValidationException;
+import com.sneakershop.backend.service.ValidationSupport;
 import lombok.RequiredArgsConstructor;
 import org.springframework.mail.SimpleMailMessage;
 import org.springframework.mail.javamail.JavaMailSender;
@@ -42,21 +44,13 @@ public class CustomerService {
     @Transactional
     public Customer create(Customer kh) {
         // 🔥 NỚI LỎNG: Cho phép ngày sinh, SĐT trống lúc đăng ký
+        normalizeCustomer(kh);
         validateCustomer(kh);
-
-        // Xử lý Email an toàn
-        if (kh.getEmail() != null && kh.getEmail().isBlank()) {
-            kh.setEmail(null);
+        if (kh.getEmail() != null && repository.existsByEmailNormalized(kh.getEmail())) {
+            throw new ValidationException("email", "Email khách hàng đã được sử dụng.");
         }
-        if (kh.getEmail() != null && repository.existsByEmail(kh.getEmail())) {
-            throw new RuntimeException("Email đã tồn tại");
-        }
-
-        // Xử lý Phone an toàn
-        if (kh.getPhone() != null && !kh.getPhone().isBlank()) {
-            if (repository.existsByPhone(kh.getPhone())) {
-                throw new RuntimeException("Số điện thoại đã tồn tại");
-            }
+        if (kh.getPhone() != null && repository.existsByPhoneNormalized(kh.getPhone())) {
+            throw new ValidationException("phone", "Số điện thoại khách hàng đã được sử dụng.");
         }
 
         kh.setStatus("ACTIVE");
@@ -77,20 +71,16 @@ public class CustomerService {
                 .orElseThrow(() -> new RuntimeException("Không tìm thấy khách hàng"));
 
         // Gọi validate bổ sung (nếu khách vào trang cá nhân điền SĐT/Ngày sinh thì check kĩ)
+        normalizeCustomer(data);
         validateCustomer(data);
-
-        if (data.getEmail() != null && !data.getEmail().isBlank()) {
-            if (kh.getEmail() == null || !kh.getEmail().equalsIgnoreCase(data.getEmail())) {
-                if (repository.existsByEmail(data.getEmail())) throw new RuntimeException("Email đã tồn tại");
-            }
+        if (data.getEmail() != null && repository.existsByEmailNormalizedAndIdNot(data.getEmail(), id)) {
+            throw new ValidationException("email", "Email khách hàng đã được sử dụng.");
         }
-        if (data.getPhone() != null && !data.getPhone().isBlank()) {
-            if (kh.getPhone() == null || !kh.getPhone().equals(data.getPhone())) {
-                if (repository.existsByPhone(data.getPhone())) throw new RuntimeException("Số điện thoại đã tồn tại");
-            }
+        if (data.getPhone() != null && repository.existsByPhoneNormalizedAndIdNot(data.getPhone(), id)) {
+            throw new ValidationException("phone", "Số điện thoại khách hàng đã được sử dụng.");
         }
 
-        kh.setTen(data.getTen());
+        kh.setTen(ValidationSupport.trim(data.getTen()));
         kh.setEmail(data.getEmail());
         kh.setPhone(data.getPhone());
         kh.setNgaySinh(data.getNgaySinh());
@@ -121,11 +111,24 @@ public class CustomerService {
     // HÀM MỚI TẠO: GỌI HÀM NÀY SAU KHI ĐƠN HÀNG THANH TOÁN THÀNH CÔNG
     @Transactional
     public void addPointsFromOrder(Long customerId, double totalOrderAmount) {
+        addPointsFromCompletedOrder(customerId, java.math.BigDecimal.valueOf(totalOrderAmount), null);
+    }
+
+    @Transactional
+    public void addPointsFromCompletedOrder(Long customerId, java.math.BigDecimal finalAmount, String orderCode) {
         Customer kh = repository.findById(customerId).orElse(null);
         if (kh == null) return;
 
-        // Quy đổi: 10.000 VNĐ = 1 điểm
-        int pointsToAdd = (int) (totalOrderAmount / 10000);
+        String safeOrderCode = orderCode == null ? "" : orderCode.trim();
+        if (!safeOrderCode.isEmpty() && pointHistoryRepo.existsByCustomerIdAndReasonContaining(kh.getId(), safeOrderCode)) {
+            return;
+        }
+
+        // Quy đổi theo nghiệp vụ mới: 1.000 VNĐ = 1 điểm
+        java.math.BigDecimal amount = finalAmount == null ? java.math.BigDecimal.ZERO : finalAmount;
+        int pointsToAdd = amount.divide(java.math.BigDecimal.valueOf(1000), 0, java.math.RoundingMode.DOWN).intValue();
+        if (pointsToAdd <= 0) return;
+
         int oldPoint = kh.getDiemTichLuy() != null ? kh.getDiemTichLuy() : 0;
         int newPoint = oldPoint + pointsToAdd;
 
@@ -133,7 +136,37 @@ public class CustomerService {
         ph.setCustomerId(kh.getId());
         ph.setOldPoint(oldPoint);
         ph.setNewPoint(newPoint);
-        ph.setReason("Tích điểm từ đơn hàng mua thành công");
+        ph.setReason("Cộng điểm từ đơn hàng hoàn thành" + (safeOrderCode.isEmpty() ? "" : " - " + safeOrderCode));
+        pointHistoryRepo.save(ph);
+
+        kh.setDiemTichLuy(newPoint);
+        updateRankHistory(kh);
+        repository.save(kh);
+    }
+
+
+    @Transactional
+    public void subtractPointsFromReturn(Long customerId, java.math.BigDecimal refundAmount, String returnCode) {
+        Customer kh = repository.findById(customerId).orElse(null);
+        if (kh == null) return;
+
+        String safeReturnCode = returnCode == null ? "" : returnCode.trim();
+        if (!safeReturnCode.isEmpty() && pointHistoryRepo.existsByCustomerIdAndReasonContaining(kh.getId(), safeReturnCode)) {
+            return;
+        }
+
+        java.math.BigDecimal amount = refundAmount == null ? java.math.BigDecimal.ZERO : refundAmount;
+        int pointsToSubtract = amount.divide(java.math.BigDecimal.valueOf(1000), 0, java.math.RoundingMode.DOWN).intValue();
+        if (pointsToSubtract <= 0) return;
+
+        int oldPoint = kh.getDiemTichLuy() != null ? kh.getDiemTichLuy() : 0;
+        int newPoint = Math.max(0, oldPoint - pointsToSubtract);
+
+        CustomerPointHistory ph = new CustomerPointHistory();
+        ph.setCustomerId(kh.getId());
+        ph.setOldPoint(oldPoint);
+        ph.setNewPoint(newPoint);
+        ph.setReason("Trừ điểm do hoàn tiền trả hàng" + (safeReturnCode.isEmpty() ? "" : " - " + safeReturnCode));
         pointHistoryRepo.save(ph);
 
         kh.setDiemTichLuy(newPoint);
@@ -212,7 +245,14 @@ public class CustomerService {
         }
     }
 
+    private void normalizeCustomer(Customer kh) {
+        kh.setTen(ValidationSupport.trim(kh.getTen()));
+        kh.setEmail(ValidationSupport.lowerTrim(kh.getEmail()));
+        kh.setPhone(ValidationSupport.trim(kh.getPhone()));
+    }
+
     private void validateCustomer(Customer kh) {
+        kh.setTen(ValidationSupport.trim(kh.getTen()));
         if (kh.getTen() == null || kh.getTen().trim().isEmpty()) {
             throw new RuntimeException("Tên không được để trống");
         }

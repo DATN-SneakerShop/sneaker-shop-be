@@ -7,6 +7,7 @@ import com.sneakershop.backend.dto.order.admin.AdminOrderDetailDTO;
 import com.sneakershop.backend.dto.order.admin.CounterPaymentQrResponse;
 import com.sneakershop.backend.dto.order.admin.AdminOrderSummaryDTO;
 import com.sneakershop.backend.dto.order.admin.AdminOrderUpdateRequest;
+import com.sneakershop.backend.dto.order.admin.AdminDeliveryFailedRequest;
 import com.sneakershop.backend.entity.order.enums.OrderStatus;
 import com.sneakershop.backend.entity.order.enums.PaymentMethod;
 import com.sneakershop.backend.entity.order.enums.PaymentStatus;
@@ -65,6 +66,11 @@ public class AdminOrderManagementController {
         return ResponseEntity.ok(adminOrderManagementService.updateMeta(id, request));
     }
 
+    @PostMapping("/{id}/mark-paid")
+    public ResponseEntity<AdminOrderDetailDTO> markPaid(@PathVariable Long id) {
+        return ResponseEntity.ok(adminOrderManagementService.markPaid(id));
+    }
+
     @PatchMapping("/{id}/status")
     public ResponseEntity<AdminOrderDetailDTO> updateStatus(@PathVariable Long id, @Valid @RequestBody UpdateOrderStatusRequest request) {
         return ResponseEntity.ok(adminOrderManagementService.updateOrderStatus(id, request));
@@ -73,6 +79,11 @@ public class AdminOrderManagementController {
     @PostMapping("/{id}/cancel")
     public ResponseEntity<AdminOrderDetailDTO> cancel(@PathVariable Long id, @Valid @RequestBody CancelOrderRequest request) {
         return ResponseEntity.ok(adminOrderManagementService.cancel(id, request));
+    }
+
+    @PostMapping("/{id}/delivery-failed")
+    public ResponseEntity<AdminOrderDetailDTO> markDeliveryFailed(@PathVariable Long id, @Valid @RequestBody AdminDeliveryFailedRequest request) {
+        return ResponseEntity.ok(adminOrderManagementService.markDeliveryFailed(id, request));
     }
 
     @PostMapping("/{id}/returns")

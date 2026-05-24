@@ -5,6 +5,8 @@ import com.sneakershop.backend.dto.voucher.VoucherRequest;
 import com.sneakershop.backend.dto.voucher.VoucherResponse;
 import com.sneakershop.backend.entity.customer.Customer;
 import com.sneakershop.backend.entity.voucher.Voucher;
+import com.sneakershop.backend.exception.ValidationException;
+import com.sneakershop.backend.service.ValidationSupport;
 import com.sneakershop.backend.entity.voucher.VoucherCustomer;
 import com.sneakershop.backend.entity.voucher.VoucherUsage;
 import com.sneakershop.backend.repository.customer.CustomerRepository;
@@ -121,26 +123,15 @@ public class VoucherService {
     }
     @Transactional
     public Voucher createVoucher(VoucherRequest dto) {
-        // 1. Kiểm tra tên tránh trùng (gây lỗi SQL Unique)
-        if (voucherRepository.existsByName(dto.getName())) {
-            throw new RuntimeException("Tên voucher đã tồn tại!");
-        }
-
-        // 2. Kiểm tra ngày tháng (tránh NullPointerException)
-        if (dto.getStartDate() == null || dto.getEndDate() == null) {
-            throw new RuntimeException("Ngày bắt đầu và kết thúc không được để trống");
-        }
+        validateVoucher(dto, null);
 
         Voucher v = new Voucher();
         v.setCode("TEMP_" + System.currentTimeMillis());
-        v.setName(dto.getName());
-        v.setType(dto.getType());
-
-        // Chuyển BigDecimal từ DTO sang Long của Entity
-        v.setValue(dto.getValue() != null ? dto.getValue().longValue() : 0L);
-        v.setMaxDiscount(dto.getMaxDiscount() != null ? dto.getMaxDiscount().longValue() : null);
-        v.setMinOrderValue(dto.getMinOrderValue() != null ? dto.getMinOrderValue().longValue() : 0L);
-
+        v.setName(ValidationSupport.trim(dto.getName()));
+        v.setType(ValidationSupport.trim(dto.getType()));
+        v.setValue(dto.getValue());
+        v.setMaxDiscount(dto.getMaxDiscount());
+        v.setMinOrderValue(dto.getMinOrderValue() != null ? dto.getMinOrderValue() : 0L);
         v.setQuantity(dto.getQuantity());
         v.setUsedCount(0);
         v.setIsPublic(dto.getIsPublic());
@@ -152,18 +143,14 @@ public class VoucherService {
         v.setMinCustomerSpent(dto.getMinCustomerSpent());
         v.setMaxDaysSinceLastOrder(dto.getMaxDaysSinceLastOrder());
         v.setIsFirstOrderOnly(dto.getIsFirstOrderOnly());
-        // 3. Tự động tính trạng thái
-        LocalDateTime now = LocalDateTime.now();
-        if (dto.getStartDate().isAfter(now)) {
-            v.setStatus("INACTIVE");
-        } else if (dto.getEndDate().isBefore(now)) {
-            v.setStatus("EXPIRED");
-        } else {
-            v.setStatus("ACTIVE");
-        }
 
+        applyVoucherStatus(v);
         Voucher saved = voucherRepository.save(v);
-        saved.setCode("VC" + String.format("%05d", saved.getId()));
+        String code = "VC" + String.format("%05d", saved.getId());
+        if (voucherRepository.existsByCodeNormalizedAndIdNot(code, saved.getId())) {
+            throw new ValidationException("code", "Mã voucher đã tồn tại.");
+        }
+        saved.setCode(code);
         return voucherRepository.save(saved);
     }
     public List<CustomerVoucherDTO> getAllCustomersForVoucher() {
@@ -180,26 +167,24 @@ public class VoucherService {
     public VoucherResponse updateVoucher(Long id, VoucherRequest dto) {
         Voucher voucher = voucherRepository.findById(id)
                 .orElseThrow(() -> new RuntimeException("Không tìm thấy Voucher để cập nhật"));
+        validateVoucher(dto, id);
 
-        voucher.setName(dto.getName());
-        voucher.setType(dto.getType());
-
-        // 🔥 QUAN TRỌNG: Ép kiểu BigDecimal sang Long để tránh lỗi 500
-        voucher.setValue(dto.getValue() != null ? dto.getValue().longValue() : 0L);
-        voucher.setMaxDiscount(dto.getMaxDiscount() != null ? dto.getMaxDiscount().longValue() : null);
-        voucher.setMinOrderValue(dto.getMinOrderValue() != null ? dto.getMinOrderValue().longValue() : 0L);
-
+        voucher.setName(ValidationSupport.trim(dto.getName()));
+        voucher.setType(ValidationSupport.trim(dto.getType()));
+        voucher.setValue(dto.getValue());
+        voucher.setMaxDiscount(dto.getMaxDiscount());
+        voucher.setMinOrderValue(dto.getMinOrderValue() != null ? dto.getMinOrderValue() : 0L);
         voucher.setQuantity(dto.getQuantity());
         voucher.setStartDate(dto.getStartDate());
         voucher.setEndDate(dto.getEndDate());
         voucher.setIsPublic(dto.getIsPublic());
         voucher.setDescription(dto.getDescription());
-
-        // Tự động cập nhật lại trạng thái theo thời gian mới sửa
-        LocalDateTime now = LocalDateTime.now();
-        if (voucher.getStartDate().isAfter(now)) voucher.setStatus("INACTIVE");
-        else if (voucher.getEndDate().isBefore(now)) voucher.setStatus("EXPIRED");
-        else voucher.setStatus("ACTIVE");
+        voucher.setLimitCustomerDays(dto.getLimitCustomerDays());
+        voucher.setApplyBirthdayMonth(dto.getApplyBirthdayMonth());
+        voucher.setMinCustomerSpent(dto.getMinCustomerSpent());
+        voucher.setMaxDaysSinceLastOrder(dto.getMaxDaysSinceLastOrder());
+        voucher.setIsFirstOrderOnly(dto.getIsFirstOrderOnly());
+        applyVoucherStatus(voucher);
 
         Voucher updatedVoucher = voucherRepository.save(voucher);
         return mapToResponse(updatedVoucher);
@@ -237,6 +222,32 @@ public class VoucherService {
     public List<Voucher> getAvailableVouchers(Long customerId) {
         // Gửi thẳng customerId xuống (có thể là số hoặc null). Logic SQL sẽ tự phân loại Khách lẻ hay Khách có TK
         return voucherRepository.findAvailableVouchersForOrder(LocalDateTime.now(), customerId);
+    }
+
+    private void validateVoucher(VoucherRequest dto, Long currentId) {
+        String name = ValidationSupport.trim(dto.getName());
+        if (name == null) throw new ValidationException("name", "Tên voucher không được để trống.");
+        boolean dupName = currentId == null ? voucherRepository.existsByNameNormalized(name) : voucherRepository.existsByNameNormalizedAndIdNot(name, currentId);
+        if (dupName) throw new ValidationException("name", "Tên voucher đã tồn tại.");
+        if (dto.getStartDate() == null || dto.getEndDate() == null || !dto.getStartDate().isBefore(dto.getEndDate())) {
+            throw new ValidationException("startDate", "Ngày bắt đầu phải trước ngày kết thúc.");
+        }
+        if (dto.getQuantity() == null || dto.getQuantity() <= 0) {
+            throw new ValidationException("quantity", "Số lượng voucher phải lớn hơn 0.");
+        }
+        if (dto.getValue() == null || dto.getValue() <= 0) {
+            throw new ValidationException("value", "Giá trị giảm không hợp lệ.");
+        }
+        if ("PERCENT".equalsIgnoreCase(dto.getType()) && dto.getValue() > 100) {
+            throw new ValidationException("value", "Phần trăm giảm giá không được vượt quá 100.");
+        }
+    }
+
+    private void applyVoucherStatus(Voucher v) {
+        LocalDateTime now = LocalDateTime.now();
+        if (v.getStartDate().isAfter(now)) v.setStatus("INACTIVE");
+        else if (v.getEndDate().isBefore(now)) v.setStatus("EXPIRED");
+        else v.setStatus("ACTIVE");
     }
 
     @Scheduled(cron = "0 0 0 1 * *")

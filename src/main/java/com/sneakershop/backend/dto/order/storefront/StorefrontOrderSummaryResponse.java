@@ -17,4 +17,7 @@ public class StorefrontOrderSummaryResponse {
     private BigDecimal finalAmount;
     private Integer totalItems;
     private LocalDateTime createdAt;
+    private LocalDateTime deliveredAt;
+    private LocalDateTime completedAt;
+    private String returnStatus;
 }

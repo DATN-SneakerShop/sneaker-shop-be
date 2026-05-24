@@ -14,5 +14,7 @@ public class VariantResponse {
 
     private BigDecimal price;
     private Integer stock;
+    private Integer reservedQuantity;
+    private Integer availableStock;
     private String imageUrl;
 }

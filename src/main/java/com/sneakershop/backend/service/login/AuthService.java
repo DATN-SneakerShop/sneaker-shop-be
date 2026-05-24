@@ -15,9 +15,13 @@ import com.sneakershop.backend.entity.customer.Address;
 import com.sneakershop.backend.entity.customer.Customer;
 import com.sneakershop.backend.entity.login.Role;
 import com.sneakershop.backend.entity.login.User;
+import com.sneakershop.backend.exception.ValidationException;
+import com.sneakershop.backend.service.ValidationSupport;
 import com.sneakershop.backend.repository.customer.AddressRepository;
 import com.sneakershop.backend.repository.customer.CustomerRepository;
 import com.sneakershop.backend.repository.login.RoleRepository;
+import com.sneakershop.backend.repository.customer.CustomerRankRepository;
+import com.sneakershop.backend.entity.customer.CustomerRank;
 import com.sneakershop.backend.repository.login.UserRepository;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
@@ -47,6 +51,7 @@ public class AuthService {
     private final JavaMailSender mailSender;
     private final CustomerRepository customerRepository;
     private final AddressRepository addressRepository;
+    private final CustomerRankRepository customerRankRepository;
     private final SystemAuditLogService systemAuditLogService;
 
     @Transactional
@@ -94,14 +99,24 @@ public class AuthService {
 
     @Transactional
     public void registerLocal(UserRequest request, String ip) {
-        if (userRepository.existsByEmail(request.getEmail())) {
-            throw new IllegalArgumentException("Email này đã được đăng ký!");
+        String email = ValidationSupport.lowerTrim(request.getEmail());
+        String username = ValidationSupport.trim(request.getUsername());
+        if (username == null) username = email;
+        if (email == null) throw new ValidationException("email", "Email không được để trống.");
+        if (userRepository.existsByEmailNormalized(email)) {
+            throw new ValidationException("email", "Email này đã được đăng ký.");
+        }
+        if (userRepository.existsByUsernameNormalized(username)) {
+            throw new ValidationException("username", "Tên đăng nhập đã được sử dụng.");
+        }
+        if (customerRepository.existsByEmailNormalized(email)) {
+            throw new ValidationException("email", "Khách hàng này đã có tài khoản.");
         }
 
         User user = new User();
-        user.setUsername(request.getEmail());
-        user.setEmail(request.getEmail());
-        user.setFullName(request.getFullName());
+        user.setUsername(username);
+        user.setEmail(email);
+        user.setFullName(ValidationSupport.trim(request.getFullName()));
         user.setPasswordHash(passwordEncoder.encode(request.getPassword()));
         user.setLoaiDangNhap("LOCAL");
         user.setStatus("ACTIVE");
@@ -115,7 +130,7 @@ public class AuthService {
         ensureCustomerProfile(user);
 
         systemAuditLogService.logManual(
-                request.getEmail(), ip, "AUTH", "REGISTER", "User",
+                email, ip, "AUTH", "REGISTER", "User",
                 "Đăng ký mới qua Email: " + user.getEmail(), "SUCCESS", null, "INFO"
         );
     }
@@ -366,11 +381,52 @@ public class AuthService {
         dto.setNgaySinh(customer.getNgaySinh());
         dto.setDiemTichLuy(customer.getDiemTichLuy());
         dto.setLoaiKhach(customer.getLoaiKhach());
+        enrichRankInfo(dto, customer);
         dto.setStatus(customer.getStatus());
         dto.setGhiChu(customer.getGhiChu());
         dto.setCreatedAt(customer.getCreatedAt());
         dto.setUpdatedAt(customer.getUpdatedAt());
         return dto;
+    }
+
+    private void enrichRankInfo(CurrentCustomerResponse dto, Customer customer) {
+        List<CustomerRank> ranks = customerRankRepository.findAllByOrderByMinPointsDesc();
+        int points = customer.getDiemTichLuy() == null ? 0 : customer.getDiemTichLuy();
+        CustomerRank current = null;
+        for (CustomerRank rank : ranks) {
+            if (rank.getName() != null && rank.getName().equalsIgnoreCase(customer.getLoaiKhach())) {
+                current = rank;
+                break;
+            }
+        }
+        if (current == null) {
+            for (CustomerRank rank : ranks) {
+                if (rank.getMinPoints() != null && points >= rank.getMinPoints()) {
+                    current = rank;
+                    break;
+                }
+            }
+        }
+        if (current != null) {
+            dto.setRankDiscountPercent(current.getDiscountPercent() == null ? 0 : current.getDiscountPercent());
+            dto.setRankDescription(current.getDescription());
+        } else {
+            dto.setRankDiscountPercent(0);
+        }
+
+        CustomerRank next = null;
+        for (int i = ranks.size() - 1; i >= 0; i--) {
+            CustomerRank rank = ranks.get(i);
+            if (rank.getMinPoints() != null && rank.getMinPoints() > points) {
+                if (next == null || rank.getMinPoints() < next.getMinPoints()) {
+                    next = rank;
+                }
+            }
+        }
+        if (next != null) {
+            dto.setNextRankName(next.getName());
+            dto.setPointsToNextRank(Math.max(0, next.getMinPoints() - points));
+        }
     }
 
     private CurrentAddressResponse mapAddress(Address address) {

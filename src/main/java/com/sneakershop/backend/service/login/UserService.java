@@ -5,6 +5,8 @@ import com.sneakershop.backend.dto.login.UserRequest;
 import com.sneakershop.backend.entity.login.AuditLog;
 import com.sneakershop.backend.entity.login.Role;
 import com.sneakershop.backend.entity.login.User;
+import com.sneakershop.backend.exception.ValidationException;
+import com.sneakershop.backend.service.ValidationSupport;
 import com.sneakershop.backend.repository.login.AuditLogRepository;
 import com.sneakershop.backend.repository.login.RoleRepository;
 import com.sneakershop.backend.repository.login.UserRepository;
@@ -56,15 +58,15 @@ public class UserService {
             throw new IllegalArgumentException("Họ tên không được để trống!");
         }
 
-        String username = request.getUsername().trim();
-        String email = request.getEmail().trim().toLowerCase();
-        String fullName = request.getFullName().trim();
+        String username = ValidationSupport.trim(request.getUsername());
+        String email = ValidationSupport.lowerTrim(request.getEmail());
+        String fullName = ValidationSupport.trim(request.getFullName());
 
-        if (userRepository.existsByUsername(username)) {
-            throw new IllegalArgumentException("Tên đăng nhập đã tồn tại!");
+        if (userRepository.existsByUsernameNormalized(username)) {
+            throw new ValidationException("username", "Tên đăng nhập đã được sử dụng.");
         }
-        if (userRepository.existsByEmail(email)) {
-            throw new IllegalArgumentException("Email đã được sử dụng!");
+        if (userRepository.existsByEmailNormalized(email)) {
+            throw new ValidationException("email", "Email này đã được đăng ký.");
         }
 
         User user = new User();
@@ -97,8 +99,8 @@ public class UserService {
                 .anyMatch(role -> "CUSTOMER".equalsIgnoreCase(role.getCode()));
 
         if (isCustomer) {
-            if (customerRepository.existsByEmail(email)) {
-                throw new IllegalArgumentException("Email đã tồn tại trong danh sách khách hàng!");
+            if (customerRepository.existsByEmailNormalized(email)) {
+                throw new ValidationException("email", "Khách hàng này đã có tài khoản.");
             }
 
             Customer customer = new Customer();
@@ -124,12 +126,19 @@ public class UserService {
         User user = userRepository.findById(id)
                 .orElseThrow(() -> new IllegalArgumentException("Không tìm thấy người dùng"));
 
-        if (!user.getEmail().equalsIgnoreCase(request.getEmail()) && userRepository.existsByEmail(request.getEmail())) {
-            throw new IllegalArgumentException("Email mới đã được sử dụng!");
+        String email = ValidationSupport.lowerTrim(request.getEmail());
+        String username = ValidationSupport.trim(request.getUsername());
+        if (email == null) throw new ValidationException("email", "Email không được để trống.");
+        if (userRepository.existsByEmailNormalizedAndIdNot(email, id)) {
+            throw new ValidationException("email", "Email này đã được đăng ký.");
         }
+        if (username != null && userRepository.existsByUsernameNormalizedAndIdNot(username, id)) {
+            throw new ValidationException("username", "Tên đăng nhập đã được sử dụng.");
+        }
+        if (username != null) user.setUsername(username);
 
-        user.setFullName(request.getFullName());
-        user.setEmail(request.getEmail());
+        user.setFullName(ValidationSupport.trim(request.getFullName()));
+        user.setEmail(email);
 
         if (request.getPassword() != null && !request.getPassword().trim().isEmpty()) {
             user.setPasswordHash(passwordEncoder.encode(request.getPassword()));
@@ -166,8 +175,12 @@ public class UserService {
             description = "Đã tự cập nhật hồ sơ cá nhân | Tên mới: #{#fullName} | Email mới: #{#email}")
     public void updateProfile(String username, String fullName, String email, String ip) {
         User user = userRepository.findByUsername(username).orElseThrow(() -> new RuntimeException("User not found"));
-        user.setFullName(fullName);
-        user.setEmail(email);
+        String newEmail = ValidationSupport.lowerTrim(email);
+        if (newEmail != null && userRepository.existsByEmailNormalizedAndIdNot(newEmail, user.getId())) {
+            throw new ValidationException("email", "Email này đã được đăng ký.");
+        }
+        user.setFullName(ValidationSupport.trim(fullName));
+        user.setEmail(newEmail);
         userRepository.save(user);
     }
 

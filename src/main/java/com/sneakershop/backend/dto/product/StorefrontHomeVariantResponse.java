@@ -11,6 +11,8 @@ public class StorefrontHomeVariantResponse {
     private String colorway;
     private String size;
     private Integer stock;
+    private Integer reservedQuantity;
+    private Integer availableStock;
     private String imageUrl;
     private BigDecimal originalPrice;
     private BigDecimal salePrice;

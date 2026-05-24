@@ -26,6 +26,20 @@ public class CreateOrderRequest {
     private String note;
     private Long freeShipVoucherId;
 
+    // Admin tạo đơn ONLINE: dùng các field đã có sẵn trên Order entity, không đổi schema/entity.
+    private String ordererName;
+    private String ordererEmail;
+    private String ordererPhone;
+
+    private String receiverName;
+    private String receiverPhone;
+    private String addressLabel;
+    private String shippingProvince;
+    private String shippingDistrict;
+    private String shippingWard;
+    private String shippingDetailAddress;
+    private String shippingAddressLine;
+
     @Valid
     @NotEmpty
     private List<OrderItemCreateRequest> items;

@@ -20,6 +20,7 @@ import com.sneakershop.backend.repository.order.CartItemRepository;
 import com.sneakershop.backend.repository.order.CartRepository;
 import com.sneakershop.backend.repository.product.ProductVariantRepository;
 import com.sneakershop.backend.service.pricing.ProductPricingPromotionService;
+import com.sneakershop.backend.service.ValidationSupport;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
@@ -61,7 +62,7 @@ public class CartService {
 
         Integer quantity = request.getQuantity() == null ? 1 : request.getQuantity();
         if (quantity <= 0) {
-            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Số lượng phải lớn hơn 0");
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Số lượng sản phẩm phải là số nguyên dương.");
         }
 
         Cart cart = getOrCreateActiveCart(principalName, sessionKey);
@@ -113,7 +114,7 @@ public class CartService {
             UpdateCartItemQuantityRequest request
     ) {
         if (request.getQuantity() == null || request.getQuantity() <= 0) {
-            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Số lượng phải lớn hơn 0");
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Số lượng sản phẩm phải là số nguyên dương.");
         }
 
         Cart cart = getOrCreateActiveCart(principalName, sessionKey);
@@ -250,16 +251,18 @@ public class CartService {
 
     private void validateStock(ProductVariant variant, Integer quantity) {
         if (quantity == null || quantity <= 0) {
-            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Số lượng phải lớn hơn 0");
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Số lượng sản phẩm phải là số nguyên dương.");
         }
 
+        if (quantity > ValidationSupport.MAX_QUANTITY_PER_ITEM) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Mỗi sản phẩm chỉ được mua tối đa 10 đôi trong một đơn hàng.");
+        }
         int availableStock = getAvailableStock(variant);
 
         if (availableStock < quantity) {
             throw new ResponseStatusException(
                     HttpStatus.BAD_REQUEST,
-                    "Không đủ tồn kho cho SKU " + variant.getSku()
-                            + ". Khả dụng hiện tại: " + availableStock
+                    "Số lượng mua vượt quá tồn kho hiện có. Tồn kho còn lại: " + availableStock + "."
             );
         }
     }

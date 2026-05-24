@@ -196,4 +196,17 @@ public interface ProductRepository extends JpaRepository<Product, Long>, JpaSpec
       and (p.status is null or lower(p.status) <> lower('Ngừng bán'))
 """)
     List<Product> findAllForStorefrontHome();
+
+    @Query("select count(p) > 0 from Product p where lower(trim(p.name)) = lower(trim(:name))")
+    boolean existsByNameNormalized(@Param("name") String name);
+
+    @Query("select count(p) > 0 from Product p where lower(trim(p.name)) = lower(trim(:name)) and p.id <> :id")
+    boolean existsByNameNormalizedAndIdNot(@Param("name") String name, @Param("id") Long id);
+
+    @Query("select count(p) > 0 from Product p where lower(trim(p.sku)) = lower(trim(:sku))")
+    boolean existsBySkuNormalized(@Param("sku") String sku);
+
+    @Query("select count(p) > 0 from Product p where lower(trim(p.sku)) = lower(trim(:sku)) and p.id <> :id")
+    boolean existsBySkuNormalizedAndIdNot(@Param("sku") String sku, @Param("id") Long id);
+
 }

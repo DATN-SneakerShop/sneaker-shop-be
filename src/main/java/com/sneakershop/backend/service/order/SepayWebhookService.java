@@ -14,6 +14,7 @@ import com.sneakershop.backend.entity.order.enums.SalesChannel;
 import com.sneakershop.backend.repository.order.OrderRepository;
 import com.sneakershop.backend.repository.order.PaymentTransactionRepository;
 import com.sneakershop.backend.service.notification.TelegramNotificationService;
+import com.sneakershop.backend.service.customer.CustomerService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
@@ -33,6 +34,7 @@ public class SepayWebhookService {
     private final SepayService sepayService;
     private final TelegramNotificationService telegramNotificationService;
     private final ObjectMapper objectMapper;
+    private final CustomerService customerService;
 
     @Transactional(readOnly = true)
     public CheckoutResponse getPaymentInfo(String orderCode, String lookupCode) {
@@ -48,7 +50,7 @@ public class SepayWebhookService {
                 .orElseThrow(() -> new RuntimeException("Không tìm thấy giao dịch thanh toán"));
 
         String transferContent = tx.getIdempotencyKey();
-        String qrImageUrl = sepayService.buildQrImageUrl(order.getTotalAmount(), transferContent);
+        String qrImageUrl = sepayService.buildQrImageUrl(order.getFinalAmount(), transferContent);
 
         return CheckoutResponse.builder()
                 .orderId(order.getId())
@@ -182,7 +184,7 @@ public class SepayWebhookService {
         BigDecimal incomingAmount = request.getTransferAmount() == null ? BigDecimal.ZERO : request.getTransferAmount();
         BigDecimal alreadyReceived = tx.getActualAmount() == null ? BigDecimal.ZERO : tx.getActualAmount();
         BigDecimal totalReceived = alreadyReceived.add(incomingAmount);
-        BigDecimal expectedAmount = order.getTotalAmount() == null ? BigDecimal.ZERO : order.getTotalAmount();
+        BigDecimal expectedAmount = order.getFinalAmount() == null ? BigDecimal.ZERO : order.getFinalAmount();
         BigDecimal shortage = expectedAmount.subtract(totalReceived).max(BigDecimal.ZERO);
         BigDecimal excess = totalReceived.subtract(expectedAmount).max(BigDecimal.ZERO);
 
@@ -192,31 +194,31 @@ public class SepayWebhookService {
         tx.setRawPayload(toJson(request));
         tx.setActualAmount(totalReceived);
 
-        if (totalReceived.compareTo(expectedAmount) < 0) {
-            tx.setStatus(TransactionStatus.PENDING);
-            tx.setProviderMessage("Đã nhận " + totalReceived + " / " + expectedAmount + " VND. Thiếu " + shortage + " VND. Content=" + request.getContent());
+        if (totalReceived.compareTo(expectedAmount) != 0) {
+            String mismatchReason = "Chuyển khoản sai số tiền. Vui lòng liên hệ admin để được xử lý.";
+            tx.setStatus(TransactionStatus.FAILED);
+            tx.setProviderMessage(mismatchReason + " Cần=" + expectedAmount + " VND, thực nhận=" + totalReceived + " VND. Content=" + request.getContent());
             tx.setConfirmedAt(resolveReceivedAt(request));
             paymentTransactionRepository.save(tx);
 
-            order.setPaymentStatus(totalReceived.compareTo(BigDecimal.ZERO) > 0 ? PaymentStatus.PARTIALLY_PAID : PaymentStatus.PENDING);
+            order.setPaymentStatus(PaymentStatus.FAILED);
+            order.setNote(appendNote(order.getNote(), mismatchReason));
             orderRepository.save(order);
 
             telegramNotificationService.sendMessage(
-                    "⚠️ <b>Thanh toán SePay chưa đủ</b>\n"
+                    "⚠️ <b>Thanh toán SePay sai số tiền</b>\n"
                             + "Mã đơn: <b>" + order.getOrderCode() + "</b>\n"
                             + "Mã CK: <b>" + safe(tx.getIdempotencyKey()) + "</b>\n"
                             + "Cần: <b>" + expectedAmount + " VND</b>\n"
-                            + "Đã nhận lũy kế: <b>" + totalReceived + " VND</b>\n"
-                            + "Còn thiếu: <b>" + shortage + " VND</b>\n"
+                            + "Thực nhận: <b>" + totalReceived + " VND</b>\n"
+                            + (totalReceived.compareTo(expectedAmount) < 0 ? "Thiếu: <b>" + shortage + " VND</b>\n" : "Dư: <b>" + excess + " VND</b>\n")
                             + "SePay ID mới: <b>" + request.getId() + "</b>"
             );
             return;
         }
 
         tx.setStatus(TransactionStatus.SUCCESS);
-        tx.setProviderMessage(excess.compareTo(BigDecimal.ZERO) > 0
-                ? "Thanh toán dư " + excess + " VND. Content=" + request.getContent()
-                : request.getContent());
+        tx.setProviderMessage(request.getContent());
         tx.setConfirmedAt(resolveReceivedAt(request));
         paymentTransactionRepository.save(tx);
 
@@ -230,13 +232,15 @@ public class SepayWebhookService {
             order.setOrderStatus(OrderStatus.PROCESSING);
         }
         orderRepository.save(order);
+        if (SalesChannel.OFFLINE.equals(order.getChannel()) && order.getCustomer() != null && OrderStatus.COMPLETED.equals(order.getOrderStatus())) {
+            customerService.addPointsFromCompletedOrder(order.getCustomer().getId(), order.getFinalAmount(), order.getOrderCode());
+        }
 
         telegramNotificationService.sendMessage(
-                (excess.compareTo(BigDecimal.ZERO) > 0 ? "✅ <b>Thanh toán SePay thành công nhưng dư tiền</b>\n" : "✅ <b>Thanh toán SePay thành công</b>\n")
+                "✅ <b>Thanh toán SePay thành công</b>\n"
                         + "Mã đơn: <b>" + order.getOrderCode() + "</b>\n"
                         + "Mã CK: <b>" + safe(tx.getIdempotencyKey()) + "</b>\n"
                         + "Số tiền nhận lũy kế: <b>" + totalReceived + " VND</b>\n"
-                        + (excess.compareTo(BigDecimal.ZERO) > 0 ? "Dư: <b>" + excess + " VND</b>\n" : "")
                         + "Ngân hàng: <b>" + safe(request.getGateway()) + "</b>\n"
                         + "Ref: <b>" + safe(request.getReferenceCode()) + "</b>\n"
                         + "SePay ID mới: <b>" + request.getId() + "</b>"
@@ -287,6 +291,16 @@ public class SepayWebhookService {
         } catch (Exception e) {
             return String.valueOf(data);
         }
+    }
+
+    private String appendNote(String oldNote, String message) {
+        if (oldNote == null || oldNote.isBlank()) {
+            return message;
+        }
+        if (oldNote.contains(message)) {
+            return oldNote;
+        }
+        return oldNote + "\n" + message;
     }
 
     private String safe(Object value) {

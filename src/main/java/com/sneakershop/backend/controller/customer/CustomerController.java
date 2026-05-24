@@ -1,6 +1,9 @@
 package com.sneakershop.backend.controller.customer;
 
 import com.sneakershop.backend.dto.customer.CustomerHistoryDTO;
+import com.sneakershop.backend.dto.customer.CustomerDashboardDTO;
+import com.sneakershop.backend.dto.customer.CustomerSpendingDTO;
+import com.sneakershop.backend.dto.customer.CustomerTransactionDTO;
 import com.sneakershop.backend.entity.customer.Customer;
 import com.sneakershop.backend.entity.customer.CustomerPointHistory;
 import com.sneakershop.backend.entity.customer.CustomerRankHistory;
@@ -9,6 +12,7 @@ import com.sneakershop.backend.repository.customer.CustomerRankHistoryRepository
 import com.sneakershop.backend.repository.customer.CustomerRepository;
 import com.sneakershop.backend.repository.order.OrderRepository;
 import com.sneakershop.backend.service.customer.CustomerService;
+import com.sneakershop.backend.service.customer.CustomerAnalyticsService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.web.bind.annotation.*;
@@ -26,6 +30,7 @@ public class CustomerController {
     private final CustomerPointHistoryRepository pointRepo;
     private final OrderRepository orderRepo;
     private final CustomerRepository customerRepo;
+    private final CustomerAnalyticsService analyticsService;
 
     @GetMapping
     public List<Customer> getAll() { return service.getAllActive(); }
@@ -157,15 +162,39 @@ public class CustomerController {
         return res;
     }
 
+    // Thống kê chi tiêu khách hàng
+    @GetMapping("/spending")
+    public List<CustomerSpendingDTO> getCustomerSpending(){
+        return analyticsService.spending();
+    }
+
+    @GetMapping("/top-spending")
+    public List<CustomerSpendingDTO> getTopSpending(@RequestParam(name = "limit", required = false, defaultValue = "3") Integer limit){
+        return analyticsService.topCustomers(limit);
+    }
+
+    @GetMapping("/vip")
+    public List<CustomerSpendingDTO> getVipCustomers(
+            @RequestParam(name = "minPoint", required = false) Integer minPoint,
+            @RequestParam(name = "maxPoint", required = false) Integer maxPoint
+    ){
+        return analyticsService.vipCustomers(minPoint, maxPoint);
+    }
+
+    @GetMapping("/dashboard")
+    public CustomerDashboardDTO getCustomerDashboard(){
+        return analyticsService.dashboard();
+    }
+
     // Lịch sử giao dịch khách hàng
     @GetMapping("/history")
-    public List<CustomerHistoryDTO> getHistorySpending(){
-        return orderRepo.getCustomerHistory();
+    public List<CustomerTransactionDTO> getHistorySpending(){
+        return analyticsService.transactions();
     }
 
     @DeleteMapping("/history/{id}")
-    public void deleteHistory(@PathVariable Long id){
-        orderRepo.deleteById(id);
+    public org.springframework.http.ResponseEntity<?> deleteHistory(@PathVariable Long id){
+        return org.springframework.http.ResponseEntity.badRequest().body("Không được xóa đơn hàng từ màn lịch sử giao dịch. Vui lòng xử lý trong quản lý đơn hàng.");
     }
 
 

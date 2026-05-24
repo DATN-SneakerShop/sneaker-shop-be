@@ -1,10 +1,12 @@
 package com.sneakershop.backend.service.product;
 
-import com.sneakershop.backend.audit.AuditAction; // 🔥 Thêm import Audit
-import com.sneakershop.backend.dto.product.MaterialRequest; // 🔥 Dùng MaterialRequest
+import com.sneakershop.backend.audit.AuditAction;
+import com.sneakershop.backend.dto.product.MaterialRequest;
 import com.sneakershop.backend.dto.product.MaterialResponse;
-import com.sneakershop.backend.entity.product.Material; // 🔥 Dùng Entity Material
+import com.sneakershop.backend.entity.product.Material;
+import com.sneakershop.backend.exception.ValidationException;
 import com.sneakershop.backend.repository.product.MaterialRepository;
+import com.sneakershop.backend.service.ValidationSupport;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -13,17 +15,15 @@ import java.util.List;
 
 @Service @RequiredArgsConstructor
 public class MaterialService {
-    private final MaterialRepository materialRepository; // Đổi tên cho đúng nghĩa
+    private final MaterialRepository materialRepository;
 
-    public List<MaterialResponse> getAll() {
-        return materialRepository.findAllByDeletedFalse().stream().map(this::mapToRes).toList();
-    }
+    public List<MaterialResponse> getAll() { return materialRepository.findAllByDeletedFalse().stream().map(this::mapToRes).toList(); }
 
     @Transactional @AuditAction(module="PRODUCT", action="CREATE", entity="Material", description="Thêm chất liệu: #{#req.name}")
     public MaterialResponse create(MaterialRequest req) {
-        if (materialRepository.existsByNameAndDeletedFalse(req.getName())) throw new RuntimeException("Chất liệu đã tồn tại!");
+        validateName(req.getName(), null);
         Material m = new Material();
-        m.setName(req.getName());
+        m.setName(ValidationSupport.trim(req.getName()));
         m.setDeleted(false);
         return mapToRes(materialRepository.save(m));
     }
@@ -31,7 +31,8 @@ public class MaterialService {
     @Transactional @AuditAction(module="PRODUCT", action="UPDATE", entity="Material", description="Sửa chất liệu ID #{#id}")
     public MaterialResponse update(Long id, MaterialRequest req) {
         Material m = materialRepository.findById(id).orElseThrow(() -> new RuntimeException("Không tìm thấy chất liệu"));
-        m.setName(req.getName());
+        validateName(req.getName(), id);
+        m.setName(ValidationSupport.trim(req.getName()));
         return mapToRes(materialRepository.save(m));
     }
 
@@ -42,10 +43,11 @@ public class MaterialService {
         materialRepository.save(m);
     }
 
-    private MaterialResponse mapToRes(Material m) {
-        MaterialResponse r = new MaterialResponse();
-        r.setId(m.getId());
-        r.setName(m.getName());
-        return r;
+    private void validateName(String rawName, Long currentId) {
+        String name = ValidationSupport.trim(rawName);
+        if (name == null) throw new ValidationException("name", "Tên không được để trống.");
+        boolean duplicate = currentId == null ? materialRepository.existsByNameNormalized(name) : materialRepository.existsByNameNormalizedAndIdNot(name, currentId);
+        if (duplicate) throw new ValidationException("name", "Tên chất liệu đã tồn tại.");
     }
+    private MaterialResponse mapToRes(Material m) { MaterialResponse r = new MaterialResponse(); r.setId(m.getId()); r.setName(m.getName()); return r; }
 }

@@ -3,6 +3,8 @@ package com.sneakershop.backend.service.promotion;
 import com.sneakershop.backend.audit.AuditAction;
 import com.sneakershop.backend.dto.promotion.*;
 import com.sneakershop.backend.entity.product.ProductVariant;
+import com.sneakershop.backend.exception.ValidationException;
+import com.sneakershop.backend.service.ValidationSupport;
 import com.sneakershop.backend.entity.promotion.DiscountType;
 import com.sneakershop.backend.entity.promotion.Promotion;
 import com.sneakershop.backend.entity.promotion.PromotionDetail;
@@ -16,6 +18,8 @@ import javax.persistence.EntityNotFoundException;
 import java.math.BigDecimal;
 import java.time.LocalDateTime;
 import java.util.List;
+import java.util.HashSet;
+import java.util.Set;
 
 @Service
 @RequiredArgsConstructor
@@ -49,6 +53,7 @@ public class PromotionService {
     public PromotionDTO create(CreatePromotionRequest request) {
 
         Promotion promotion = new Promotion();
+        validatePromotionRequest(request, null);
         mapFromRequest(promotion, request);
         promotion.setCode("TEMP");
 
@@ -67,7 +72,7 @@ public class PromotionService {
         Promotion promotion = promotionRepository.findById(id)
                 .orElseThrow(() -> new EntityNotFoundException("Promotion not found"));
 
-        validateTime(request.getStartTime(), request.getEndTime());
+        validatePromotionRequest(request, id);
         mapFromRequest(promotion, request);
 
         return PromotionDTO.fromEntity(promotionRepository.save(promotion));
@@ -107,6 +112,28 @@ public class PromotionService {
 
     // ================= PRIVATE =================
 
+    private void validatePromotionRequest(BasePromotionRequest r, Long currentId) {
+        String name = ValidationSupport.trim(r.getName());
+        if (name == null) throw new ValidationException("name", "Tên khuyến mãi không được để trống");
+        boolean dupName = currentId == null ? promotionRepository.existsByNameNormalized(name) : promotionRepository.existsByNameNormalizedAndIdNot(name, currentId);
+        if (dupName) throw new ValidationException("name", "Tên khuyến mãi đã tồn tại.");
+        validateTime(r.getStartTime(), r.getEndTime());
+
+        Set<Long> variantIds = new HashSet<>();
+        if (r.getDetails() != null) {
+            for (PromotionDetailRequest d : r.getDetails()) {
+                if (d.getVariantId() == null) throw new ValidationException("variantId", "Biến thể không được để trống.");
+                if (!variantIds.add(d.getVariantId())) {
+                    throw new ValidationException("variantId", "Biến thể này bị trùng trong danh sách khuyến mãi.");
+                }
+                Long promotionId = currentId == null ? -1L : currentId;
+                if (promotionRepository.existsActiveOverlapForVariant(d.getVariantId(), r.getStartTime(), r.getEndTime(), promotionId)) {
+                    throw new ValidationException("variantId", "Biến thể này đã có khuyến mãi trong khoảng thời gian đã chọn.");
+                }
+            }
+        }
+    }
+
     private void mapFromRequest(Promotion promotion, BasePromotionRequest r) {
 
         if (r.getName() == null || r.getName().trim().isEmpty()) {
@@ -115,7 +142,7 @@ public class PromotionService {
 
         validateTime(r.getStartTime(), r.getEndTime());
 
-        promotion.setName(r.getName().trim());
+        promotion.setName(ValidationSupport.trim(r.getName()));
         promotion.setStartTime(r.getStartTime());
         promotion.setEndTime(r.getEndTime());
         promotion.setActive(r.getActive() != null ? r.getActive() : true);
@@ -134,6 +161,10 @@ public class PromotionService {
 
                 ProductVariant variant = variantRepository.findById(detailReq.getVariantId())
                         .orElseThrow(() -> new RuntimeException("Không tìm thấy Variant ID: " + detailReq.getVariantId()));
+                if (detailReq.getDiscountType() == DiscountType.AMOUNT && variant.getPrice() != null
+                        && detailReq.getDiscountValue().compareTo(variant.getPrice()) > 0) {
+                    throw new ValidationException("discountValue", "Giá trị giảm không được vượt quá giá sản phẩm.");
+                }
 
                 PromotionDetail detail = new PromotionDetail();
                 detail.setPromotion(promotion);
@@ -148,17 +179,17 @@ public class PromotionService {
 
     private void validateDiscountParams(DiscountType type, BigDecimal value) {
         if (type == null || value == null || value.compareTo(BigDecimal.ZERO) < 0) {
-            throw new RuntimeException("Thông số giảm giá không hợp lệ");
+            throw new ValidationException("discountValue", "Giá trị giảm không hợp lệ.");
         }
         switch (type) {
             case PERCENT -> {
                 if (value.compareTo(BigDecimal.valueOf(100)) > 0) {
-                    throw new RuntimeException("Phần trăm không được vượt quá 100%");
+                    throw new ValidationException("discountValue", "Phần trăm giảm giá không được vượt quá 100.");
                 }
             }
             case AMOUNT -> {
                 if (value.compareTo(BigDecimal.ZERO) <= 0) {
-                    throw new RuntimeException("Giảm tiền phải lớn hơn 0");
+                    throw new ValidationException("discountValue", "Giá trị giảm không hợp lệ.");
                 }
             }
             case BUY_2_GET_1 -> {
@@ -171,10 +202,10 @@ public class PromotionService {
 
     private void validateTime(LocalDateTime start, LocalDateTime end) {
         if (start == null || end == null) {
-            throw new RuntimeException("Thiếu thời gian");
+            throw new ValidationException("startTime", "Thời gian bắt đầu phải trước thời gian kết thúc.");
         }
         if (!start.isBefore(end)) {
-            throw new RuntimeException("Thời gian bắt đầu phải trước kết thúc");
+            throw new ValidationException("startTime", "Thời gian bắt đầu phải trước thời gian kết thúc.");
         }
     }
 

@@ -9,4 +9,6 @@ public interface CustomerPointHistoryRepository
         extends JpaRepository<CustomerPointHistory, Long> {
 
     List<CustomerPointHistory> findByCustomerIdOrderByChangedAtDesc(Long customerId);
+
+    boolean existsByCustomerIdAndReasonContaining(Long customerId, String keyword);
 }

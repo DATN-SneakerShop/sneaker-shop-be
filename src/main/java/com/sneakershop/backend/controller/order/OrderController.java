@@ -5,6 +5,8 @@ import com.sneakershop.backend.entity.order.enums.OrderStatus;
 import com.sneakershop.backend.entity.order.enums.ReturnStatus;
 import com.sneakershop.backend.entity.order.enums.SalesChannel;
 import com.sneakershop.backend.service.order.OrderService;
+import com.sneakershop.backend.service.customer.CustomerAnalyticsService;
+import com.sneakershop.backend.dto.customer.CustomerSpendingDTO;
 import lombok.RequiredArgsConstructor;
 import org.springframework.format.annotation.DateTimeFormat;
 import org.springframework.http.ContentDisposition;
@@ -26,6 +28,7 @@ import java.util.Optional;
 public class OrderController {
 
     private final OrderService orderService;
+    private final CustomerAnalyticsService customerAnalyticsService;
 
     @PostMapping
     public ResponseEntity<OrderDetailDTO> create(@Valid @RequestBody CreateOrderRequest req) {
@@ -175,6 +178,19 @@ public class OrderController {
     @GetMapping("/stats/returned-products")
     public ResponseEntity<List<ReturnedProductStatisticDTO>> returnedProducts() {
         return ResponseEntity.ok(orderService.returnedProducts());
+    }
+
+
+    @GetMapping("/customer-spending")
+    public ResponseEntity<List<CustomerSpendingDTO>> customerSpending() {
+        return ResponseEntity.ok(customerAnalyticsService.spending());
+    }
+
+    @GetMapping("/top-customers")
+    public ResponseEntity<List<CustomerSpendingDTO>> topCustomers(
+            @RequestParam(name = "limit", required = false, defaultValue = "3") Integer limit
+    ) {
+        return ResponseEntity.ok(customerAnalyticsService.topCustomers(limit));
     }
 
     @GetMapping("/dashboard")

@@ -14,6 +14,10 @@ public class CurrentCustomerResponse {
     private LocalDate ngaySinh;
     private Integer diemTichLuy;
     private String loaiKhach;
+    private Integer rankDiscountPercent;
+    private String nextRankName;
+    private Integer pointsToNextRank;
+    private String rankDescription;
     private String status;
     private String ghiChu;
     private LocalDateTime createdAt;

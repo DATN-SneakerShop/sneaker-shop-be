@@ -51,4 +51,23 @@ public interface PromotionRepository extends JpaRepository<Promotion, Long> {
             "AND :now BETWEEN p.startTime AND p.endTime " +
             "AND p.deleted = false")
     List<Promotion> findActivePromotionsForReport(@Param("now") LocalDateTime now);
+
+    @Query("select count(p) > 0 from Promotion p where lower(trim(p.name)) = lower(trim(:name)) and (p.deleted is null or p.deleted = false)")
+    boolean existsByNameNormalized(@Param("name") String name);
+
+    @Query("select count(p) > 0 from Promotion p where lower(trim(p.name)) = lower(trim(:name)) and p.id <> :id and (p.deleted is null or p.deleted = false)")
+    boolean existsByNameNormalizedAndIdNot(@Param("name") String name, @Param("id") Long id);
+
+    @Query("""
+        select count(pd) > 0 from PromotionDetail pd
+        join pd.promotion p
+        where pd.variant.id = :variantId
+          and p.id <> :promotionId
+          and (p.deleted is null or p.deleted = false)
+          and p.active = true
+          and p.startTime < :endTime
+          and p.endTime > :startTime
+    """)
+    boolean existsActiveOverlapForVariant(@Param("variantId") Long variantId, @Param("startTime") java.time.LocalDateTime startTime, @Param("endTime") java.time.LocalDateTime endTime, @Param("promotionId") Long promotionId);
+
 }

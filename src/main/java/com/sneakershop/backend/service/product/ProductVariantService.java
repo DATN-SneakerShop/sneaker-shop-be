@@ -4,6 +4,8 @@ import com.sneakershop.backend.dto.product.VariantRequest;
 import com.sneakershop.backend.entity.product.*;
 import com.sneakershop.backend.repository.product.ProductRepository;
 import com.sneakershop.backend.repository.product.ProductVariantRepository;
+import com.sneakershop.backend.exception.ValidationException;
+import com.sneakershop.backend.service.ValidationSupport;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -26,13 +28,13 @@ public class ProductVariantService {
         Product product = productRepository.findById(productId)
                 .orElseThrow(() -> new EntityNotFoundException("Không tìm thấy sản phẩm: " + productId));
 
-        // Validate trùng lặp
+        normalizeAndValidateVariantRequest(request, null);
         boolean exists = product.getVariants().stream()
                 .anyMatch(variant -> matchSize(variant.getSize(), request.getSize())
                         && matchColor(variant.getColor(), request.getColorway()));
 
         if (exists) {
-            throw new IllegalArgumentException("Biến thể (Size + Color) này đã tồn tại trong sản phẩm!");
+            throw new ValidationException("variants", "Biến thể sản phẩm này đã tồn tại.");
         }
 
         ProductVariant v = new ProductVariant();
@@ -49,8 +51,8 @@ public class ProductVariantService {
 
         // ✅ Validate SKU
         if (request.getSku() != null && !request.getSku().trim().isEmpty()) {
-            if (variantRepository.existsBySku(request.getSku())) {
-                throw new IllegalArgumentException("Mã SKU biến thể đã tồn tại: " + request.getSku());
+            if (variantRepository.existsBySkuNormalized(request.getSku())) {
+                throw new ValidationException("sku", "Mã SKU biến thể đã được sử dụng.");
             }
             v.setSku(request.getSku());
         }
@@ -71,15 +73,28 @@ public class ProductVariantService {
             throw new IllegalArgumentException("Biến thể không thuộc về sản phẩm này: " + productId);
         }
 
+        normalizeAndValidateVariantRequest(request, variantId);
+
+        boolean comboExists = v.getProduct().getVariants().stream()
+                .anyMatch(other -> !other.getId().equals(variantId)
+                        && matchSize(other.getSize(), request.getSize())
+                        && matchColor(other.getColor(), request.getColorway()));
+        if (comboExists) {
+            throw new ValidationException("variants", "Biến thể sản phẩm này đã tồn tại.");
+        }
+
+        v.setSize(mapSize(request.getSize()));
+        v.setColor(mapColor(request.getColorway()));
+
         // 🔥 ĐÃ FIX: Bổ sung cập nhật đầy đủ các trường từ ma trận giao diện Vue.js
         if (request.getPrice() != null) v.setPrice(request.getPrice());
         if (request.getSalePrice() != null) v.setSalePrice(request.getSalePrice());
         if (request.getStock() != 0) v.setStock(request.getStock());
 
         // Kiểm tra logic nếu SKU bị thay đổi
-        if (request.getSku() != null && !request.getSku().trim().isEmpty() && !request.getSku().equals(v.getSku())) {
-            if (variantRepository.existsBySku(request.getSku())) {
-                throw new IllegalArgumentException("Mã SKU mới đã tồn tại: " + request.getSku());
+        if (request.getSku() != null && !request.getSku().trim().isEmpty() && !request.getSku().equalsIgnoreCase(v.getSku())) {
+            if (variantRepository.existsBySkuNormalizedAndIdNot(request.getSku(), variantId)) {
+                throw new ValidationException("sku", "Mã SKU biến thể đã được sử dụng.");
             }
             v.setSku(request.getSku());
         }
@@ -103,6 +118,21 @@ public class ProductVariantService {
 
         // Nhờ @SQLDelete bên Entity, lệnh delete này sẽ tự động chạy ngầm UPDATE is_deleted=true
         variantRepository.delete(v);
+    }
+
+    private void normalizeAndValidateVariantRequest(VariantRequest request, Long currentId) {
+        request.setSku(ValidationSupport.trim(request.getSku()));
+        request.setSize(ValidationSupport.trim(request.getSize()));
+        request.setColorway(ValidationSupport.trim(request.getColorway()));
+        if (request.getStock() < 0) {
+            throw new ValidationException("stock", "Số lượng sản phẩm không hợp lệ.");
+        }
+        if (request.getSku() != null) {
+            boolean duplicate = currentId == null
+                    ? variantRepository.existsBySkuNormalized(request.getSku())
+                    : variantRepository.existsBySkuNormalizedAndIdNot(request.getSku(), currentId);
+            if (duplicate) throw new ValidationException("sku", "Mã SKU biến thể đã được sử dụng.");
+        }
     }
 
     // ================== CÁC HÀM HELPER CHUYỂN ĐỔI ==================

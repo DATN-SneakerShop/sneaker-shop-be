@@ -1,6 +1,8 @@
 package com.sneakershop.backend.service.product;
 
 import com.sneakershop.backend.audit.AuditAction;
+import com.sneakershop.backend.exception.ValidationException;
+import com.sneakershop.backend.service.ValidationSupport;
 import com.sneakershop.backend.dto.product.ColorRequest;
 import com.sneakershop.backend.dto.product.ColorResponse;
 import com.sneakershop.backend.entity.product.Color;
@@ -27,12 +29,10 @@ public class ColorService {
     @Transactional
     @AuditAction(module = "PRODUCT", action = "CREATE", entity = "Color", description = "Thêm màu: #{#request.name}")
     public ColorResponse create(ColorRequest request) {
-        if (colorRepository.existsByNameAndDeletedFalse(request.getName())) {
-            throw new RuntimeException("Tên màu này đã tồn tại!");
-        }
+        validateColor(request, null);
         Color color = new Color();
-        color.setName(request.getName());
-        color.setHexCode(request.getHexCode());
+        color.setName(ValidationSupport.trim(request.getName()));
+        color.setHexCode(ValidationSupport.trim(request.getHexCode()));
         color.setDeleted(false);
         return mapToResponse(colorRepository.save(color));
     }
@@ -41,8 +41,9 @@ public class ColorService {
     @AuditAction(module = "PRODUCT", action = "UPDATE", entity = "Color", description = "Sửa màu ID #{#id}")
     public ColorResponse update(Long id, ColorRequest request) {
         Color color = colorRepository.findById(id).orElseThrow(() -> new EntityNotFoundException("Not found"));
-        color.setName(request.getName());
-        color.setHexCode(request.getHexCode());
+        validateColor(request, id);
+        color.setName(ValidationSupport.trim(request.getName()));
+        color.setHexCode(ValidationSupport.trim(request.getHexCode()));
         return mapToResponse(colorRepository.save(color));
     }
 
@@ -52,6 +53,18 @@ public class ColorService {
         Color color = colorRepository.findById(id).orElseThrow(() -> new EntityNotFoundException("Not found"));
         color.setDeleted(true); // 🔥 Soft Delete (Ẩn)
         colorRepository.save(color);
+    }
+
+    private void validateColor(ColorRequest request, Long currentId) {
+        String name = ValidationSupport.trim(request.getName());
+        String hex = ValidationSupport.trim(request.getHexCode());
+        if (name == null) throw new ValidationException("name", "Tên màu không được để trống.");
+        boolean dupName = currentId == null ? colorRepository.existsByNameNormalized(name) : colorRepository.existsByNameNormalizedAndIdNot(name, currentId);
+        if (dupName) throw new ValidationException("name", "Tên màu đã tồn tại.");
+        if (hex != null) {
+            boolean dupHex = currentId == null ? colorRepository.existsByHexCodeNormalized(hex) : colorRepository.existsByHexCodeNormalizedAndIdNot(hex, currentId);
+            if (dupHex) throw new ValidationException("hexCode", "Mã màu đã tồn tại.");
+        }
     }
 
     private ColorResponse mapToResponse(Color color) {

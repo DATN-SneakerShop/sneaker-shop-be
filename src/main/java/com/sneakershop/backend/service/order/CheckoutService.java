@@ -7,6 +7,7 @@ import com.sneakershop.backend.dto.order.CheckoutResponse;
 import com.sneakershop.backend.dto.order.PaymentInitResponse;
 import com.sneakershop.backend.dto.pricing.PriceResultDTO;
 import com.sneakershop.backend.entity.customer.Customer;
+import com.sneakershop.backend.entity.customer.CustomerRank;
 import com.sneakershop.backend.entity.order.Cart;
 import com.sneakershop.backend.entity.order.CartItem;
 import com.sneakershop.backend.entity.order.Order;
@@ -27,6 +28,8 @@ import com.sneakershop.backend.entity.voucher.VoucherUsage;
 import com.sneakershop.backend.exception.OutOfStockException;
 import com.sneakershop.backend.exception.VoucherInvalidException;
 import com.sneakershop.backend.repository.customer.CustomerRepository;
+import com.sneakershop.backend.repository.customer.CustomerRankRepository;
+import com.sneakershop.backend.repository.login.UserRepository;
 import com.sneakershop.backend.repository.order.CartRepository;
 import com.sneakershop.backend.repository.order.OrderRepository;
 import com.sneakershop.backend.repository.order.PaymentTransactionRepository;
@@ -36,7 +39,10 @@ import com.sneakershop.backend.repository.voucher.VoucherRepository;
 import com.sneakershop.backend.repository.voucher.VoucherUsageRepository;
 import com.sneakershop.backend.service.notification.TelegramNotificationService;
 import com.sneakershop.backend.service.pricing.ProductPricingPromotionService;
+import com.sneakershop.backend.service.ValidationSupport;
 import lombok.RequiredArgsConstructor;
+import org.springframework.security.core.Authentication;
+import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -45,6 +51,8 @@ import java.math.RoundingMode;
 import java.time.LocalDateTime;
 import java.util.Arrays;
 import java.util.List;
+import java.util.Map;
+import java.util.HashMap;
 import java.util.UUID;
 import java.util.stream.Collectors;
 
@@ -59,6 +67,8 @@ public class CheckoutService {
     private final PaymentTransactionRepository paymentTransactionRepository;
     private final ProductPricingPromotionService promotionPricingService;
     private final CustomerRepository customerRepository;
+    private final CustomerRankRepository customerRankRepository;
+    private final UserRepository userRepository;
     private final List<PaymentGatewayClient> paymentGatewayClients;
     private final VoucherCustomerRepository voucherCustomerRepository;
 
@@ -80,6 +90,7 @@ public class CheckoutService {
         if (selectedItems.isEmpty()) {
             throw new RuntimeException("Giỏ hàng không có sản phẩm được chọn");
         }
+        validateOrderQuantities(selectedItems);
 
         BigDecimal subtotal = BigDecimal.ZERO;
         BigDecimal promotionDiscountTotal = BigDecimal.ZERO;
@@ -120,10 +131,14 @@ public class CheckoutService {
             shippingDiscount = calculateVoucherDiscount(freeShipVoucher, shippingFee); // Giảm tối đa bằng phí ship
         }
 
+        CustomerRankDiscount vip = resolveVipDiscount(customer, subtotal);
+        BigDecimal vipDiscount = vip.getDiscountAmount();
+
         BigDecimal discountAmount = promotionDiscountTotal
                 .add(voucherDiscount)
-                .add(shippingDiscount);
-        BigDecimal totalAmount = subtotal.subtract(voucherDiscount).add(shippingFee).subtract(shippingDiscount);
+                .add(shippingDiscount)
+                .add(vipDiscount);
+        BigDecimal totalAmount = subtotal.subtract(voucherDiscount).subtract(vipDiscount).add(shippingFee).subtract(shippingDiscount);
 
         if (totalAmount.compareTo(BigDecimal.ZERO) < 0) {
             totalAmount = BigDecimal.ZERO;
@@ -145,6 +160,9 @@ public class CheckoutService {
                 .voucherDiscountAmount(voucherDiscount)
                 .shippingDiscountAmount(shippingDiscount)
                 .discountAmount(discountAmount)
+                .vipDiscountAmount(vipDiscount)
+                .customerRankName(vip.getRankName())
+                .customerRankDiscountPercent(vip.getDiscountPercent())
                 .shippingFee(shippingFee)
                 .totalAmount(totalAmount)
                 .finalAmount(totalAmount)
@@ -203,6 +221,7 @@ public class CheckoutService {
         if (selectedItems.isEmpty()) {
             throw new RuntimeException("Giỏ hàng không có sản phẩm được chọn");
         }
+        validateOrderQuantities(selectedItems);
 
         Order order = new Order();
         fillOrderHeader(order, request, cart, customer);
@@ -261,7 +280,10 @@ public class CheckoutService {
             shippingDiscount = calculateVoucherDiscount(freeShipVoucher, shippingFee);
         }
 
-        BigDecimal totalAmount = subtotal.subtract(voucherDiscount).add(shippingFee).subtract(shippingDiscount);
+        CustomerRankDiscount vip = resolveVipDiscount(customer, subtotal);
+        BigDecimal vipDiscount = vip.getDiscountAmount();
+
+        BigDecimal totalAmount = subtotal.subtract(voucherDiscount).subtract(vipDiscount).add(shippingFee).subtract(shippingDiscount);
         if (totalAmount.compareTo(BigDecimal.ZERO) < 0) {
             totalAmount = BigDecimal.ZERO;
         }
@@ -276,6 +298,7 @@ public class CheckoutService {
         order.setPromotionDiscountAmount(promotionDiscountTotal);
         order.setVoucherDiscountAmount(voucherDiscount);
         order.setShippingDiscountAmount(shippingDiscount);
+        order.setManualDiscountAmount(vipDiscount);
 
         order.setDiscountAmount(nz(order.getPromotionDiscountAmount())
                 .add(nz(order.getVoucherDiscountAmount()))
@@ -334,7 +357,7 @@ public class CheckoutService {
         if (PaymentMethod.BANK_TRANSFER.equals(order.getPaymentMethod()) && sepayService.isEnabled()) {
             paymentCode = paymentTransaction.getIdempotencyKey();
             transferContent = sepayService.buildTransferContent(order.getId());
-            qrImageUrl = sepayService.buildQrImageUrl(order.getTotalAmount(), transferContent);
+            qrImageUrl = sepayService.buildQrImageUrl(order.getFinalAmount(), transferContent);
             bankCode = sepayService.getBankCode();
             bankName = sepayService.getBankName();
             bankAccountNo = sepayService.getBankAccountNo();
@@ -351,6 +374,9 @@ public class CheckoutService {
                 .paymentMethod(order.getPaymentMethod())
                 .subtotalAmount(order.getSubtotalAmount())
                 .discountAmount(order.getDiscountAmount())
+                .vipDiscountAmount(vipDiscount)
+                .customerRankName(vip.getRankName())
+                .customerRankDiscountPercent(vip.getDiscountPercent())
                 .shippingFee(order.getShippingFee())
                 .totalAmount(order.getTotalAmount())
                 .finalAmount(order.getFinalAmount())
@@ -364,6 +390,59 @@ public class CheckoutService {
                 .qrImageUrl(qrImageUrl)
                 .message("Tạo đơn hàng thành công")
                 .build();
+    }
+
+    private CustomerRankDiscount resolveVipDiscount(Customer customer, BigDecimal subtotal) {
+        if (customer == null) {
+            return new CustomerRankDiscount(null, 0, BigDecimal.ZERO);
+        }
+        CustomerRank rank = resolveCurrentRank(customer);
+        if (rank == null) {
+            return new CustomerRankDiscount(customer.getLoaiKhach(), 0, BigDecimal.ZERO);
+        }
+        int percent = rank.getDiscountPercent() == null ? 0 : rank.getDiscountPercent();
+        BigDecimal discount = percent <= 0
+                ? BigDecimal.ZERO
+                : nz(subtotal).multiply(BigDecimal.valueOf(percent)).divide(BigDecimal.valueOf(100), 2, RoundingMode.HALF_UP);
+        if (discount.compareTo(nz(subtotal)) > 0) {
+            discount = nz(subtotal);
+        }
+        return new CustomerRankDiscount(rank.getName(), percent, discount.max(BigDecimal.ZERO));
+    }
+
+    private CustomerRank resolveCurrentRank(Customer customer) {
+        List<CustomerRank> ranks = customerRankRepository.findAllByOrderByMinPointsDesc();
+        String rankName = customer.getLoaiKhach();
+        if (rankName != null && !rankName.isBlank()) {
+            for (CustomerRank rank : ranks) {
+                if (rank.getName() != null && rank.getName().equalsIgnoreCase(rankName)) {
+                    return rank;
+                }
+            }
+        }
+        int points = customer.getDiemTichLuy() == null ? 0 : customer.getDiemTichLuy();
+        for (CustomerRank rank : ranks) {
+            if (rank.getMinPoints() != null && points >= rank.getMinPoints()) {
+                return rank;
+            }
+        }
+        return null;
+    }
+
+    private static class CustomerRankDiscount {
+        private final String rankName;
+        private final int discountPercent;
+        private final BigDecimal discountAmount;
+
+        CustomerRankDiscount(String rankName, int discountPercent, BigDecimal discountAmount) {
+            this.rankName = rankName;
+            this.discountPercent = discountPercent;
+            this.discountAmount = discountAmount == null ? BigDecimal.ZERO : discountAmount;
+        }
+
+        public String getRankName() { return rankName; }
+        public int getDiscountPercent() { return discountPercent; }
+        public BigDecimal getDiscountAmount() { return discountAmount; }
     }
 
     private Cart resolveCart(Long cartId, Long customerId, String sessionKey) {
@@ -383,12 +462,31 @@ public class CheckoutService {
     }
 
     private Customer resolveCustomer(Long customerId) {
+        Customer currentCustomer = resolveCurrentCustomerFromSecurity();
+        if (currentCustomer != null) {
+            return currentCustomer;
+        }
         if (customerId == null) {
             return null;
         }
 
         return customerRepository.findById(customerId)
                 .orElseThrow(() -> new RuntimeException("Không tìm thấy khách hàng: " + customerId));
+    }
+
+    private Customer resolveCurrentCustomerFromSecurity() {
+        try {
+            Authentication authentication = SecurityContextHolder.getContext().getAuthentication();
+            if (authentication == null || !authentication.isAuthenticated()) return null;
+            String principal = authentication.getName();
+            if (principal == null || principal.isBlank() || "anonymousUser".equals(principal)) return null;
+            return userRepository.findByUsername(principal)
+                    .or(() -> userRepository.findByEmail(principal))
+                    .flatMap(user -> customerRepository.findByUserId(user.getId()))
+                    .orElse(null);
+        } catch (Exception ignored) {
+            return null;
+        }
     }
 
     private void validateCart(Cart cart) {
@@ -476,17 +574,47 @@ public class CheckoutService {
         item.setImageUrlSnapshot(variant.getImageUrl());
     }
 
+    private void validateOrderQuantities(List<CartItem> items) {
+        Map<Long, Integer> totalByVariant = new HashMap<>();
+        int totalItems = 0;
+        for (CartItem item : items) {
+            Integer quantity = item.getQuantity();
+            if (quantity == null || quantity <= 0) {
+                throw new RuntimeException("Số lượng sản phẩm phải là số nguyên dương.");
+            }
+            totalItems += quantity;
+            Long variantId = item.getVariant() != null ? item.getVariant().getId() : null;
+            if (variantId != null) {
+                int newTotal = totalByVariant.getOrDefault(variantId, 0) + quantity;
+                totalByVariant.put(variantId, newTotal);
+                if (newTotal > ValidationSupport.MAX_QUANTITY_PER_ITEM) {
+                    throw new RuntimeException("Mỗi sản phẩm chỉ được mua tối đa 10 đôi trong một đơn hàng.");
+                }
+            }
+        }
+        ValidationSupport.validateTotalQuantity(totalItems);
+        for (Map.Entry<Long, Integer> entry : totalByVariant.entrySet()) {
+            ProductVariant variant = productVariantRepository.findById(entry.getKey())
+                    .orElseThrow(() -> new RuntimeException("Không tìm thấy biến thể sản phẩm: " + entry.getKey()));
+            int available = getAvailableQuantity(variant);
+            if (entry.getValue() > available) {
+                throw new OutOfStockException("Số lượng mua vượt quá tồn kho hiện có. Tồn kho còn lại: " + available + ".");
+            }
+        }
+    }
+
     private void validateStock(ProductVariant variant, Integer quantity) {
         if (quantity == null || quantity <= 0) {
-            throw new RuntimeException("Số lượng phải lớn hơn 0");
+            throw new RuntimeException("Số lượng sản phẩm phải là số nguyên dương.");
+        }
+        if (quantity > ValidationSupport.MAX_QUANTITY_PER_ITEM) {
+            throw new RuntimeException("Mỗi sản phẩm chỉ được mua tối đa 10 đôi trong một đơn hàng.");
         }
 
         int available = getAvailableQuantity(variant);
         if (quantity > available) {
             throw new OutOfStockException(
-                    "Không đủ tồn kho cho SKU " + variant.getSku()
-                            + ". Khả dụng: " + available
-                            + ", cần: " + quantity
+                    "Số lượng mua vượt quá tồn kho hiện có. Tồn kho còn lại: " + available + "."
             );
         }
     }
@@ -618,7 +746,7 @@ public class CheckoutService {
         tx.setOrder(order);
         tx.setTransactionType(TransactionType.PAYMENT);
         tx.setPaymentMethod(order.getPaymentMethod());
-        tx.setRequestAmount(order.getTotalAmount());
+        tx.setRequestAmount(order.getFinalAmount());
         tx.setCurrencyCode(order.getCurrencyCode());
 
         if (PaymentMethod.COD.equals(order.getPaymentMethod())) {

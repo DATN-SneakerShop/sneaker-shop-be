@@ -72,6 +72,9 @@ public class StorefrontOrderQueryService {
         dto.setPaymentMethod(order.getPaymentMethod() != null ? order.getPaymentMethod().name() : null);
         dto.setFinalAmount(order.getFinalAmount());
         dto.setCreatedAt(order.getCreatedAt());
+        dto.setDeliveredAt(order.getDeliveredAt());
+        dto.setCompletedAt(order.getCompletedAt());
+        dto.setReturnStatus(order.getReturnStatus() != null ? order.getReturnStatus().name() : null);
 
         int totalItems = order.getItems() == null
                 ? 0
@@ -134,6 +137,9 @@ public class StorefrontOrderQueryService {
         dto.setVoucherValueSnapshot(order.getVoucherValueSnapshot());
 
         dto.setCreatedAt(order.getCreatedAt());
+        dto.setDeliveredAt(order.getDeliveredAt());
+        dto.setCompletedAt(order.getCompletedAt());
+        dto.setReturnStatus(order.getReturnStatus() != null ? order.getReturnStatus().name() : null);
         dto.setUpdatedAt(order.getUpdatedAt());
         dto.setShippedAt(order.getShippedAt());
         dto.setDeliveredAt(order.getDeliveredAt());

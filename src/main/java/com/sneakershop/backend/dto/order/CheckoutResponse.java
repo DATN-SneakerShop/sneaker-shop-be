@@ -22,6 +22,9 @@ public class CheckoutResponse {
 
     private BigDecimal subtotalAmount;
     private BigDecimal discountAmount;
+    private BigDecimal vipDiscountAmount;
+    private String customerRankName;
+    private Integer customerRankDiscountPercent;
     private BigDecimal shippingFee;
     private BigDecimal totalAmount;
     private BigDecimal finalAmount;
