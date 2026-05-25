@@ -22,6 +22,8 @@ import com.sneakershop.backend.entity.order.enums.SalesChannel;
 import com.sneakershop.backend.entity.order.enums.ShippingStatus;
 import com.sneakershop.backend.entity.order.enums.TransactionStatus;
 import com.sneakershop.backend.entity.order.enums.TransactionType;
+import com.sneakershop.backend.entity.product.Product;
+import com.sneakershop.backend.entity.product.ProductImage;
 import com.sneakershop.backend.entity.product.ProductVariant;
 import com.sneakershop.backend.entity.voucher.Voucher;
 import com.sneakershop.backend.entity.voucher.VoucherUsage;
@@ -51,6 +53,7 @@ import java.math.RoundingMode;
 import java.time.LocalDateTime;
 import java.util.Arrays;
 import java.util.List;
+import java.util.Objects;
 import java.util.Map;
 import java.util.HashMap;
 import java.util.UUID;
@@ -554,6 +557,47 @@ public class CheckoutService {
         order.rebuildShippingAddressLine();
     }
 
+    private boolean isBlank(String value) {
+        return value == null || value.trim().isEmpty();
+    }
+
+    private String resolveProductImageSnapshot(ProductVariant variant) {
+        if (variant == null) {
+            return null;
+        }
+        if (!isBlank(variant.getImageUrl())) {
+            return variant.getImageUrl().trim();
+        }
+
+        Product product = variant.getProduct();
+        if (product == null) {
+            return null;
+        }
+        if (!isBlank(product.getThumbnail())) {
+            return product.getThumbnail().trim();
+        }
+
+        List<ProductImage> images = product.getImages();
+        if (images == null || images.isEmpty()) {
+            return null;
+        }
+
+        return images.stream()
+                .filter(Objects::nonNull)
+                .filter(ProductImage::isThumbnail)
+                .map(ProductImage::getImageUrl)
+                .filter(url -> !isBlank(url))
+                .map(String::trim)
+                .findFirst()
+                .orElseGet(() -> images.stream()
+                        .filter(Objects::nonNull)
+                        .map(ProductImage::getImageUrl)
+                        .filter(url -> !isBlank(url))
+                        .map(String::trim)
+                        .findFirst()
+                        .orElse(null));
+    }
+
     private void snapshotItem(OrderItem item, ProductVariant variant) {
         item.setProductIdSnapshot(variant.getProduct() != null ? variant.getProduct().getId() : null);
         item.setVariantIdSnapshot(variant.getId());
@@ -571,7 +615,7 @@ public class CheckoutService {
                         ? variant.getProduct().getSole().getName()
                         : null
         );
-        item.setImageUrlSnapshot(variant.getImageUrl());
+        item.setImageUrlSnapshot(resolveProductImageSnapshot(variant));
     }
 
     private void validateOrderQuantities(List<CartItem> items) {
@@ -587,9 +631,6 @@ public class CheckoutService {
             if (variantId != null) {
                 int newTotal = totalByVariant.getOrDefault(variantId, 0) + quantity;
                 totalByVariant.put(variantId, newTotal);
-                if (newTotal > ValidationSupport.MAX_QUANTITY_PER_ITEM) {
-                    throw new RuntimeException("Mỗi sản phẩm chỉ được mua tối đa 10 đôi trong một đơn hàng.");
-                }
             }
         }
         ValidationSupport.validateTotalQuantity(totalItems);
@@ -606,9 +647,6 @@ public class CheckoutService {
     private void validateStock(ProductVariant variant, Integer quantity) {
         if (quantity == null || quantity <= 0) {
             throw new RuntimeException("Số lượng sản phẩm phải là số nguyên dương.");
-        }
-        if (quantity > ValidationSupport.MAX_QUANTITY_PER_ITEM) {
-            throw new RuntimeException("Mỗi sản phẩm chỉ được mua tối đa 10 đôi trong một đơn hàng.");
         }
 
         int available = getAvailableQuantity(variant);

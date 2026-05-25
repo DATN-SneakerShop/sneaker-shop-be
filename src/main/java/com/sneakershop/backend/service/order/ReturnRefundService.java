@@ -35,8 +35,7 @@ public class ReturnRefundService {
             ReturnRequestStatus.RECEIVED,
             ReturnRequestStatus.ACCEPTED,
             ReturnRequestStatus.PENDING,
-            ReturnRequestStatus.APPROVED,
-            ReturnRequestStatus.REFUNDED
+            ReturnRequestStatus.APPROVED
     );
     private static final List<ReturnRequestStatus> COUNTED_RETURN_STATUSES = Arrays.asList(
             ReturnRequestStatus.REQUESTED,

@@ -12,6 +12,8 @@ import com.sneakershop.backend.entity.order.enums.PaymentMethod;
 import com.sneakershop.backend.entity.order.enums.ShippingStatus;
 import com.sneakershop.backend.entity.order.enums.ReturnStatus;
 import com.sneakershop.backend.entity.order.enums.SalesChannel;
+import com.sneakershop.backend.entity.product.Product;
+import com.sneakershop.backend.entity.product.ProductImage;
 import com.sneakershop.backend.entity.product.ProductVariant;
 import com.sneakershop.backend.entity.voucher.Voucher;
 import com.sneakershop.backend.repository.login.UserRepository;
@@ -78,6 +80,60 @@ public class OrderService {
 
     private boolean isBlank(String value) {
         return value == null || value.trim().isEmpty();
+    }
+
+    private String resolveProductImageSnapshot(ProductVariant variant) {
+        if (variant == null) {
+            return null;
+        }
+        if (!isBlank(variant.getImageUrl())) {
+            return variant.getImageUrl().trim();
+        }
+
+        Product product = variant.getProduct();
+        if (product == null) {
+            return null;
+        }
+        if (!isBlank(product.getThumbnail())) {
+            return product.getThumbnail().trim();
+        }
+
+        List<ProductImage> images = product.getImages();
+        if (images == null || images.isEmpty()) {
+            return null;
+        }
+
+        return images.stream()
+                .filter(Objects::nonNull)
+                .filter(ProductImage::isThumbnail)
+                .map(ProductImage::getImageUrl)
+                .filter(url -> !isBlank(url))
+                .map(String::trim)
+                .findFirst()
+                .orElseGet(() -> images.stream()
+                        .filter(Objects::nonNull)
+                        .map(ProductImage::getImageUrl)
+                        .filter(url -> !isBlank(url))
+                        .map(String::trim)
+                        .findFirst()
+                        .orElse(null));
+    }
+
+    private void snapshotOrderItem(OrderItem item, ProductVariant variant) {
+        if (item == null || variant == null) {
+            return;
+        }
+
+        Product product = variant.getProduct();
+        item.setProductIdSnapshot(product != null ? product.getId() : null);
+        item.setVariantIdSnapshot(variant.getId());
+        item.setSkuSnapshot(!isBlank(item.getSkuSnapshot()) ? item.getSkuSnapshot() : variant.getSku());
+        item.setProductNameSnapshot(!isBlank(item.getProductNameSnapshot()) ? item.getProductNameSnapshot() : buildVariantName(variant));
+        item.setColorSnapshot(variant.getColor() != null ? variant.getColor().getName() : null);
+        item.setSizeSnapshot(variant.getSize() != null ? variant.getSize().getName() : null);
+        item.setMaterialSnapshot(product != null && product.getMaterial() != null ? product.getMaterial().getName() : null);
+        item.setSoleSnapshot(product != null && product.getSole() != null ? product.getSole().getName() : null);
+        item.setImageUrlSnapshot(resolveProductImageSnapshot(variant));
     }
 
     private void validateAdminOnlineShippingInfo(CreateOrderRequest req) {
@@ -414,6 +470,7 @@ public class OrderService {
             it.setLineDiscountAmount(ir.getLineDiscountAmount() != null ? nz(ir.getLineDiscountAmount()) : BigDecimal.ZERO);
             it.setSkuSnapshot(ir.getSkuSnapshot() != null ? ir.getSkuSnapshot() : variant.getSku());
             it.setProductNameSnapshot(ir.getProductNameSnapshot() != null ? ir.getProductNameSnapshot() : buildVariantName(variant));
+            snapshotOrderItem(it, variant);
 
             calcLine(it);
             items.add(it);
@@ -706,6 +763,7 @@ public class OrderService {
             it.setLineDiscountAmount(ir.getLineDiscountAmount() != null ? nz(ir.getLineDiscountAmount()) : BigDecimal.ZERO);
             it.setSkuSnapshot(ir.getSkuSnapshot() != null ? ir.getSkuSnapshot() : variant.getSku());
             it.setProductNameSnapshot(ir.getProductNameSnapshot() != null ? ir.getProductNameSnapshot() : buildVariantName(variant));
+            snapshotOrderItem(it, variant);
 
             calcLine(it);
             order.getItems().add(it);

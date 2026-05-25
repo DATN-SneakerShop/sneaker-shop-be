@@ -20,6 +20,9 @@ import com.sneakershop.backend.entity.order.enums.ShippingStatus;
 import com.sneakershop.backend.entity.order.enums.TransactionStatus;
 import com.sneakershop.backend.entity.order.enums.TransactionType;
 import com.sneakershop.backend.entity.order.enums.SalesChannel;
+import com.sneakershop.backend.entity.product.Product;
+import com.sneakershop.backend.entity.product.ProductImage;
+import com.sneakershop.backend.entity.product.ProductVariant;
 import com.sneakershop.backend.repository.order.OrderRepository;
 import com.sneakershop.backend.repository.order.PaymentTransactionRepository;
 import com.sneakershop.backend.service.notification.TelegramNotificationService;
@@ -422,6 +425,55 @@ public class AdminOrderManagementService {
         return value == null || value.isBlank() ? null : value.trim();
     }
 
+    private boolean isBlank(String value) {
+        return value == null || value.trim().isEmpty();
+    }
+
+    private String resolveItemImageSnapshot(OrderItem item) {
+        if (item == null) {
+            return null;
+        }
+        if (!isBlank(item.getImageUrlSnapshot())) {
+            return item.getImageUrlSnapshot().trim();
+        }
+
+        ProductVariant variant = item.getVariant();
+        if (variant == null) {
+            return null;
+        }
+        if (!isBlank(variant.getImageUrl())) {
+            return variant.getImageUrl().trim();
+        }
+
+        Product product = variant.getProduct();
+        if (product == null) {
+            return null;
+        }
+        if (!isBlank(product.getThumbnail())) {
+            return product.getThumbnail().trim();
+        }
+
+        List<ProductImage> images = product.getImages();
+        if (images == null || images.isEmpty()) {
+            return null;
+        }
+
+        return images.stream()
+                .filter(Objects::nonNull)
+                .filter(ProductImage::isThumbnail)
+                .map(ProductImage::getImageUrl)
+                .filter(url -> !isBlank(url))
+                .map(String::trim)
+                .findFirst()
+                .orElseGet(() -> images.stream()
+                        .filter(Objects::nonNull)
+                        .map(ProductImage::getImageUrl)
+                        .filter(url -> !isBlank(url))
+                        .map(String::trim)
+                        .findFirst()
+                        .orElse(null));
+    }
+
     private int sumItemQuantity(Order order) {
         if (order.getItems() == null) return 0;
         return order.getItems()
@@ -555,7 +607,7 @@ public class AdminOrderManagementService {
                     itemDto.setVariantId(item.getVariantId());
                     itemDto.setProductIdSnapshot(item.getProductIdSnapshot());
                     itemDto.setVariantIdSnapshot(item.getVariantIdSnapshot());
-                    itemDto.setImageUrlSnapshot(item.getImageUrlSnapshot());
+                    itemDto.setImageUrlSnapshot(resolveItemImageSnapshot(item));
                     itemDto.setProductNameSnapshot(item.getProductNameSnapshot());
                     itemDto.setSkuSnapshot(item.getSkuSnapshot());
                     itemDto.setColorSnapshot(item.getColorSnapshot());

@@ -8,11 +8,13 @@ import com.sneakershop.backend.entity.product.Category;
 import com.sneakershop.backend.dto.product.StorefrontHomeVariantResponse;
 import com.sneakershop.backend.entity.product.Product;
 import com.sneakershop.backend.entity.product.ProductVariant;
+import com.sneakershop.backend.entity.product.ProductImage;
 import com.sneakershop.backend.entity.product.ProductTag;
 import org.springframework.transaction.annotation.Transactional;
 import com.sneakershop.backend.entity.promotion.DiscountType;
 import com.sneakershop.backend.entity.promotion.PromotionDetail;
 import com.sneakershop.backend.repository.product.ProductRepository;
+import com.sneakershop.backend.repository.product.ProductImageRepository;
 import com.sneakershop.backend.repository.product.ProductVariantRepository;
 import com.sneakershop.backend.repository.promotion.PromotionDetailRepository;
 import lombok.RequiredArgsConstructor;
@@ -31,6 +33,7 @@ public class StorefrontProductService {
 
     private final ProductRepository productRepository;
     private final ProductVariantRepository productVariantRepository;
+    private final ProductImageRepository productImageRepository;
     private final PromotionDetailRepository promotionDetailRepository;
 
     @Transactional(readOnly = true)
@@ -45,6 +48,7 @@ public class StorefrontProductService {
         return Math.max(variant.getStock() - Math.max(variant.getReserved_quantity(), 0), 0);
     }
 
+    @Transactional(readOnly = true)
     public ProductDetailResponse getProductDetail(Long id) {
         Product p = productRepository.findDetailById(id)
                 .orElseThrow(() -> new RuntimeException("Không tìm thấy sản phẩm"));
@@ -70,8 +74,9 @@ public class StorefrontProductService {
             res.setCategoryNames(p.getCategories().stream().map(Category::getName).toList());
         }
 
-        if (p.getImages() != null) {
-            res.setImages(p.getImages().stream().map(img -> {
+        List<ProductImage> productImages = productImageRepository.findByProductId(p.getId());
+        if (productImages != null) {
+            res.setImages(productImages.stream().map(img -> {
                 ProductImageResponse x = new ProductImageResponse();
                 x.setId(img.getId());
                 x.setUrl(img.getImageUrl());
@@ -80,7 +85,12 @@ public class StorefrontProductService {
             }).toList());
         }
 
-        List<ProductVariantResponse> variantResponses = productVariantRepository.findByProduct_Id(p.getId()).stream()
+        List<ProductVariant> variants = productVariantRepository.findByProduct_Id(p.getId());
+        if (variants == null) {
+            variants = List.of();
+        }
+
+        List<ProductVariantResponse> variantResponses = variants.stream()
                 .filter(v -> !"Ngừng bán".equalsIgnoreCase(v.getStatus()))
                 .map(v -> {
                     ProductVariantResponse x = new ProductVariantResponse();
@@ -107,8 +117,54 @@ public class StorefrontProductService {
                 }).toList();
 
         res.setVariants(variantResponses);
+        res.setThumbnail(resolveProductThumbnail(p, productImages, variants));
         return res;
     }
+
+    private String resolveProductThumbnail(Product product, List<ProductImage> images, List<ProductVariant> variants) {
+        if (product != null && !isBlank(product.getThumbnail())) {
+            return product.getThumbnail();
+        }
+
+        if (images != null) {
+            ProductImage thumbnail = images.stream()
+                    .filter(Objects::nonNull)
+                    .filter(ProductImage::isThumbnail)
+                    .filter(img -> !isBlank(img.getImageUrl()))
+                    .findFirst()
+                    .orElse(null);
+
+            if (thumbnail != null) {
+                return thumbnail.getImageUrl();
+            }
+
+            ProductImage firstImage = images.stream()
+                    .filter(Objects::nonNull)
+                    .filter(img -> !isBlank(img.getImageUrl()))
+                    .findFirst()
+                    .orElse(null);
+
+            if (firstImage != null) {
+                return firstImage.getImageUrl();
+            }
+        }
+
+        if (variants != null) {
+            return variants.stream()
+                    .filter(Objects::nonNull)
+                    .map(ProductVariant::getImageUrl)
+                    .filter(url -> !isBlank(url))
+                    .findFirst()
+                    .orElse(null);
+        }
+
+        return null;
+    }
+
+    private boolean isBlank(String value) {
+        return value == null || value.trim().isEmpty();
+    }
+
     private StorefrontHomeProductResponse toHomeResponse(Product product) {
         if (product == null) return null;
 
@@ -162,10 +218,12 @@ public class StorefrontProductService {
         BigDecimal originalPrice = displayVariant.getPrice();
         BigDecimal salePrice = resolveBestSalePrice(displayVariant, originalPrice);
 
+        List<ProductImage> productImages = productImageRepository.findByProductId(product.getId());
+
         StorefrontHomeProductResponse res = new StorefrontHomeProductResponse();
         res.setId(product.getId());
         res.setProductName(product.getName());
-        res.setThumbnail(product.getThumbnail());
+        res.setThumbnail(resolveProductThumbnail(product, productImages, validVariants));
         res.setBrand(product.getBrand());
         res.setGender(product.getGender());
         res.setStatus(product.getStatus());
