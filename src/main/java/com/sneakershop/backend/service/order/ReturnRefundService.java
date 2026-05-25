@@ -35,8 +35,7 @@ public class ReturnRefundService {
             ReturnRequestStatus.RECEIVED,
             ReturnRequestStatus.ACCEPTED,
             ReturnRequestStatus.PENDING,
-            ReturnRequestStatus.APPROVED,
-            ReturnRequestStatus.REFUNDED
+            ReturnRequestStatus.APPROVED
     );
     private static final List<ReturnRequestStatus> COUNTED_RETURN_STATUSES = Arrays.asList(
             ReturnRequestStatus.REQUESTED,
@@ -144,18 +143,7 @@ public class ReturnRefundService {
             if (!seen.add(item.getId())) {
                 throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Sản phẩm trả hàng bị trùng trong yêu cầu.");
             }
-            int received = nz(itemReq.getReceivedQuantity());
-            int restock = nz(itemReq.getRestockQuantity());
-            if (received < 0 || received > nz(item.getQuantity())) {
-                throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Số lượng nhận hàng trả không hợp lệ.");
-            }
-            if (restock < 0 || restock > received) {
-                throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Số lượng nhập lại kho không hợp lệ.");
-            }
-            item.setReceivedQuantity(received);
-            item.setRestockQuantity(restock);
-            item.setConditionStatus(itemReq.getConditionStatus());
-            item.setNote(blankToNull(itemReq.getNote()));
+            applyReceiveInspection(item, itemReq);
         }
         rr.setAdminNote(blankToNull(request.getAdminNote()));
         rr.setReceivedAt(LocalDateTime.now());
@@ -348,7 +336,11 @@ public class ReturnRefundService {
             if (receivedQty > nz(item.getQuantity())) {
                 throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Số lượng nhận hàng trả không hợp lệ.");
             }
-            total = total.add(nz(item.getUnitPrice()).multiply(BigDecimal.valueOf(receivedQty)));
+            if (item.getInspections() != null && !item.getInspections().isEmpty()) {
+                total = total.add(nz(item.getRefundAmount()));
+            } else {
+                total = total.add(nz(item.getUnitPrice()).multiply(BigDecimal.valueOf(receivedQty)));
+            }
         }
         return total;
     }
@@ -445,15 +437,139 @@ public class ReturnRefundService {
     }
 
     private void validateReceivedQuantities(ReturnRequest rr) {
+        int totalReceived = 0;
         for (ReturnRequestItem item : rr.getItems()) {
             int receivedQty = nz(item.getReceivedQuantity());
-            if (receivedQty <= 0 || receivedQty > nz(item.getQuantity())) {
+            totalReceived += receivedQty;
+            if (receivedQty < 0 || receivedQty > nz(item.getQuantity())) {
                 throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Số lượng nhận hàng trả không hợp lệ.");
             }
             if (nz(item.getRestockQuantity()) < 0 || nz(item.getRestockQuantity()) > receivedQty) {
                 throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Số lượng nhập lại kho không hợp lệ.");
             }
+            validateInspectionSummary(item);
         }
+        if (totalReceived <= 0) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Phải có ít nhất 1 sản phẩm được shop nhận lại.");
+        }
+    }
+
+    private void applyReceiveInspection(ReturnRequestItem item, AdminReceiveReturnItemRequest itemReq) {
+        List<AdminReceiveReturnInspectionRequest> inspectionRequests = itemReq.getInspections();
+        if (inspectionRequests != null && !inspectionRequests.isEmpty()) {
+            item.getInspections().clear();
+            int totalReceived = 0;
+            int totalRestock = 0;
+            BigDecimal totalRefund = BigDecimal.ZERO;
+            ReturnConditionStatus firstStatus = null;
+            boolean mixed = false;
+
+            for (AdminReceiveReturnInspectionRequest inspectionReq : inspectionRequests) {
+                int qty = nz(inspectionReq.getQuantity());
+                int restock = nz(inspectionReq.getRestockQuantity());
+                int refundQty = nz(inspectionReq.getRefundQuantity());
+                BigDecimal refundRate = nz(inspectionReq.getRefundRate());
+
+                if (qty < 0 || restock < 0 || refundQty < 0) {
+                    throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Số lượng phân loại hàng hoàn không hợp lệ.");
+                }
+                if (restock > qty) {
+                    throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Số lượng nhập kho không được vượt quá số lượng của dòng phân loại.");
+                }
+                if (refundQty > qty) {
+                    throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Số lượng được hoàn tiền không được vượt quá số lượng của dòng phân loại.");
+                }
+                if (refundRate.signum() < 0 || refundRate.compareTo(BigDecimal.valueOf(100)) > 0) {
+                    throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Tỷ lệ hoàn tiền phải nằm trong khoảng 0% đến 100%.");
+                }
+                ReturnConditionStatus condition = inspectionReq.getConditionStatus() == null ? ReturnConditionStatus.NEW : inspectionReq.getConditionStatus();
+                if (condition != ReturnConditionStatus.NEW && restock > 0) {
+                    throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Chỉ hàng còn mới/bán lại được mới được nhập lại kho bán.");
+                }
+
+                BigDecimal lineRefund = nz(item.getUnitPrice())
+                        .multiply(BigDecimal.valueOf(refundQty))
+                        .multiply(refundRate)
+                        .divide(BigDecimal.valueOf(100), 2, RoundingMode.HALF_UP);
+
+                ReturnRequestItemInspection inspection = new ReturnRequestItemInspection();
+                inspection.setReturnItem(item);
+                inspection.setConditionStatus(condition);
+                inspection.setQuantity(qty);
+                inspection.setRestockQuantity(restock);
+                inspection.setRefundQuantity(refundQty);
+                inspection.setRefundRate(refundRate.setScale(2, RoundingMode.HALF_UP));
+                inspection.setRefundAmount(lineRefund);
+                inspection.setResponsibility(blankToNull(inspectionReq.getResponsibility()));
+                inspection.setNote(blankToNull(inspectionReq.getNote()));
+                item.getInspections().add(inspection);
+
+                totalReceived += qty;
+                totalRestock += restock;
+                totalRefund = totalRefund.add(lineRefund);
+                if (firstStatus == null) firstStatus = condition;
+                else if (firstStatus != condition) mixed = true;
+            }
+
+            if (totalReceived < 0 || totalReceived > nz(item.getQuantity())) {
+                throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Tổng số lượng phân loại không được vượt quá số lượng yêu cầu trả.");
+            }
+            item.setReceivedQuantity(totalReceived);
+            item.setRestockQuantity(totalRestock);
+            item.setRefundAmount(totalRefund);
+            item.setConditionStatus(firstStatus == null ? itemReq.getConditionStatus() : (mixed ? ReturnConditionStatus.NOT_RESELLABLE : firstStatus));
+            item.setNote(blankToNull(itemReq.getNote()));
+            return;
+        }
+
+        int received = nz(itemReq.getReceivedQuantity());
+        int restock = nz(itemReq.getRestockQuantity());
+        if (received < 0 || received > nz(item.getQuantity())) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Số lượng nhận hàng trả không hợp lệ.");
+        }
+        if (restock < 0 || restock > received) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Số lượng nhập lại kho không hợp lệ.");
+        }
+        ReturnConditionStatus condition = itemReq.getConditionStatus() == null ? ReturnConditionStatus.NEW : itemReq.getConditionStatus();
+        if (condition != ReturnConditionStatus.NEW && restock > 0) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Chỉ hàng còn mới/bán lại được mới được nhập lại kho bán.");
+        }
+        item.getInspections().clear();
+        item.setReceivedQuantity(received);
+        item.setRestockQuantity(restock);
+        item.setConditionStatus(condition);
+        item.setRefundAmount(nz(item.getUnitPrice()).multiply(BigDecimal.valueOf(received)));
+        item.setNote(blankToNull(itemReq.getNote()));
+    }
+
+    private void validateInspectionSummary(ReturnRequestItem item) {
+        if (item.getInspections() == null || item.getInspections().isEmpty()) return;
+        int totalQty = 0;
+        int totalRestock = 0;
+        int totalRefundQty = 0;
+        BigDecimal totalRefund = BigDecimal.ZERO;
+        for (ReturnRequestItemInspection inspection : item.getInspections()) {
+            int qty = nz(inspection.getQuantity());
+            int restock = nz(inspection.getRestockQuantity());
+            int refundQty = nz(inspection.getRefundQuantity());
+            if (qty < 0 || restock < 0 || refundQty < 0 || restock > qty || refundQty > qty) {
+                throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Chi tiết phân loại hàng hoàn không hợp lệ.");
+            }
+            totalQty += qty;
+            totalRestock += restock;
+            totalRefundQty += refundQty;
+            totalRefund = totalRefund.add(nz(inspection.getRefundAmount()));
+        }
+        if (totalQty != nz(item.getReceivedQuantity())) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Tổng số lượng phân loại phải bằng số lượng shop đã nhận.");
+        }
+        if (totalRestock != nz(item.getRestockQuantity()) || totalRestock > nz(item.getReceivedQuantity())) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Tổng số lượng nhập kho không hợp lệ.");
+        }
+        if (totalRefundQty > nz(item.getReceivedQuantity())) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Tổng số lượng được hoàn tiền không hợp lệ.");
+        }
+        item.setRefundAmount(totalRefund);
     }
 
     private void changeStatus(ReturnRequest rr, ReturnRequestStatus next, String note) {
@@ -552,6 +668,21 @@ public class ReturnRefundService {
         dto.setRefundAmount(item.getRefundAmount());
         dto.setConditionStatus(item.getConditionStatus());
         dto.setNote(item.getNote());
+        dto.setInspections(item.getInspections() == null ? Collections.emptyList() : item.getInspections().stream().map(this::toInspectionResponse).collect(Collectors.toList()));
+        return dto;
+    }
+
+    private ReturnRefundInspectionResponse toInspectionResponse(ReturnRequestItemInspection inspection) {
+        ReturnRefundInspectionResponse dto = new ReturnRefundInspectionResponse();
+        dto.setId(inspection.getId());
+        dto.setConditionStatus(inspection.getConditionStatus());
+        dto.setQuantity(inspection.getQuantity());
+        dto.setRestockQuantity(inspection.getRestockQuantity());
+        dto.setRefundQuantity(inspection.getRefundQuantity());
+        dto.setRefundRate(inspection.getRefundRate());
+        dto.setRefundAmount(inspection.getRefundAmount());
+        dto.setResponsibility(inspection.getResponsibility());
+        dto.setNote(inspection.getNote());
         return dto;
     }
 

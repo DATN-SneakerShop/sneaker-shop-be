@@ -4,7 +4,9 @@ import com.sneakershop.backend.entity.order.enums.ReturnConditionStatus;
 import lombok.Data;
 
 import javax.validation.constraints.Min;
+import javax.validation.Valid;
 import javax.validation.constraints.NotNull;
+import java.util.List;
 
 @Data
 public class AdminReceiveReturnItemRequest {
@@ -21,4 +23,7 @@ public class AdminReceiveReturnItemRequest {
 
     private ReturnConditionStatus conditionStatus;
     private String note;
+
+    @Valid
+    private List<AdminReceiveReturnInspectionRequest> inspections;
 }

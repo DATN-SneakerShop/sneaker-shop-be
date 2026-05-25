@@ -4,6 +4,7 @@ import com.sneakershop.backend.entity.order.enums.ReturnConditionStatus;
 import lombok.Data;
 
 import java.math.BigDecimal;
+import java.util.List;
 
 @Data
 public class ReturnRefundItemResponse {
@@ -23,4 +24,5 @@ public class ReturnRefundItemResponse {
     private BigDecimal refundAmount;
     private ReturnConditionStatus conditionStatus;
     private String note;
+    private List<ReturnRefundInspectionResponse> inspections;
 }

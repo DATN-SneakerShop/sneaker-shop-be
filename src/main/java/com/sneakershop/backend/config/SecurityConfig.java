@@ -66,6 +66,8 @@ public class SecurityConfig {
                 .antMatchers("/uploads/**").permitAll()
                 .antMatchers("/api/admin/promotions/**").hasAuthority("ADMIN")
                 .antMatchers("/api/admin/returns/**").hasAnyAuthority("ADMIN", "SALES")
+                .antMatchers("/api/admin/chat/**").hasAnyAuthority("ADMIN", "SALES")
+                .antMatchers("/api/chat/customer/**").authenticated()
                 .antMatchers("/api/returns/**").authenticated()
                 .antMatchers(HttpMethod.GET, "/api/products/**").permitAll()
                 .antMatchers("/api/admin/products/**").hasAuthority("ADMIN")

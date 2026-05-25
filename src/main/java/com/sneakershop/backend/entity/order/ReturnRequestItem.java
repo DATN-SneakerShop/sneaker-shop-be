@@ -8,6 +8,8 @@ import lombok.ToString;
 
 import javax.persistence.*;
 import java.math.BigDecimal;
+import java.util.ArrayList;
+import java.util.List;
 
 @Entity
 @Table(name = "return_request_items", indexes = {
@@ -16,8 +18,8 @@ import java.math.BigDecimal;
         @Index(name = "idx_return_item_variant", columnList = "variant_id")
 })
 @Data
-@ToString(exclude = {"returnRequest", "orderItem", "variant"})
-@EqualsAndHashCode(exclude = {"returnRequest", "orderItem", "variant"})
+@ToString(exclude = {"returnRequest", "orderItem", "variant", "inspections"})
+@EqualsAndHashCode(exclude = {"returnRequest", "orderItem", "variant", "inspections"})
 public class ReturnRequestItem {
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
@@ -56,4 +58,7 @@ public class ReturnRequestItem {
 
     @Column(name = "note", columnDefinition = "TEXT")
     private String note;
+
+    @OneToMany(mappedBy = "returnItem", cascade = CascadeType.ALL, orphanRemoval = true)
+    private List<ReturnRequestItemInspection> inspections = new ArrayList<>();
 }
