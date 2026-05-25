@@ -25,4 +25,5 @@ public class ReturnRefundItemResponse {
     private ReturnConditionStatus conditionStatus;
     private String note;
     private List<ReturnRefundInspectionResponse> inspections;
+    private List<ReturnInventoryDispositionResponse> dispositions;
 }

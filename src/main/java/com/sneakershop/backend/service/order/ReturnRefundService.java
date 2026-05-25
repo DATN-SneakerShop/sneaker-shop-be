@@ -9,6 +9,7 @@ import com.sneakershop.backend.entity.product.ProductVariant;
 import com.sneakershop.backend.repository.login.UserRepository;
 import com.sneakershop.backend.repository.order.OrderRepository;
 import com.sneakershop.backend.repository.order.ReturnRequestRepository;
+import com.sneakershop.backend.repository.order.ReturnInventoryDispositionRepository;
 import com.sneakershop.backend.repository.product.ProductVariantRepository;
 import com.sneakershop.backend.service.customer.CustomerService;
 import lombok.RequiredArgsConstructor;
@@ -48,6 +49,7 @@ public class ReturnRefundService {
     );
 
     private final ReturnRequestRepository returnRequestRepository;
+    private final ReturnInventoryDispositionRepository returnInventoryDispositionRepository;
     private final OrderRepository orderRepository;
     private final ProductVariantRepository productVariantRepository;
     private final UserRepository userRepository;
@@ -154,6 +156,12 @@ public class ReturnRefundService {
     @Transactional
     public ReturnRefundResponse refund(Long id, AdminRefundReturnRequest request) {
         ReturnRequest rr = getRequestOr404(id);
+        if (ReturnRequestStatus.COMPLETED.equals(rr.getStatus()) || rr.getCompletedAt() != null) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Yêu cầu trả hàng đã hoàn tất, không thể hoàn tiền lại lần nữa.");
+        }
+        if (rr.getRefundedAt() != null) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Yêu cầu trả hàng đã được hoàn tiền, không thể xử lý lặp.");
+        }
         requireAnyStatus(rr, ReturnRequestStatus.ACCEPTED, ReturnRequestStatus.REFUNDED);
         BigDecimal expectedRefund = calculateReceivedRefundAmount(rr);
         if (expectedRefund.signum() <= 0) {
@@ -169,6 +177,7 @@ public class ReturnRefundService {
         rr.setAdminNote(blankToNull(request == null ? null : request.getAdminNote()));
         rr.setRefundedAt(LocalDateTime.now());
         restockReceivedItems(rr);
+        createInventoryDispositions(rr);
         applyReturnedQuantities(rr);
         updateOrderReturnSummary(rr.getOrder(), refundAmount);
         subtractVipPoints(rr);
@@ -285,6 +294,89 @@ public class ReturnRefundService {
                     "Nhập lại kho từ đơn hoàn trả " + (rr.getCode() == null ? "" : rr.getCode())
             );
         }
+    }
+
+    private void createInventoryDispositions(ReturnRequest rr) {
+        if (rr == null || rr.getId() == null || returnInventoryDispositionRepository.existsByReturnRequest_Id(rr.getId())) {
+            return;
+        }
+        String actor = currentActor();
+        for (ReturnRequestItem item : safeList(rr.getItems())) {
+            ProductVariant variant = item.getVariant();
+            if (variant == null && item.getOrderItem() != null) variant = item.getOrderItem().getVariant();
+            if (variant == null) continue;
+
+            if (item.getInspections() != null && !item.getInspections().isEmpty()) {
+                for (ReturnRequestItemInspection inspection : item.getInspections()) {
+                    int qty = nz(inspection.getQuantity());
+                    if (qty <= 0) continue;
+                    int restockQty = nz(inspection.getRestockQuantity());
+                    ReturnDispositionType dispositionType = resolveDispositionType(
+                            inspection.getConditionStatus(),
+                            restockQty,
+                            blankToNull(inspection.getResponsibility()),
+                            inspection.getDispositionType()
+                    );
+                    ReturnInventoryDisposition disposition = buildDisposition(rr, item, inspection, variant,
+                            inspection.getConditionStatus(), dispositionType, qty, restockQty,
+                            inspection.getResponsibility(), inspection.getWarehouseLocation(), inspection.getNote(), actor);
+                    returnInventoryDispositionRepository.save(disposition);
+                }
+            } else {
+                int receivedQty = nz(item.getReceivedQuantity());
+                if (receivedQty <= 0) continue;
+                int restockQty = nz(item.getRestockQuantity());
+                ReturnConditionStatus condition = item.getConditionStatus() == null ? ReturnConditionStatus.NEW : item.getConditionStatus();
+                ReturnDispositionType dispositionType = resolveDispositionType(condition, restockQty, null, null);
+                ReturnInventoryDisposition disposition = buildDisposition(rr, item, null, variant, condition, dispositionType,
+                        receivedQty, restockQty, null, null, item.getNote(), actor);
+                returnInventoryDispositionRepository.save(disposition);
+            }
+        }
+    }
+
+    private ReturnInventoryDisposition buildDisposition(ReturnRequest rr, ReturnRequestItem item, ReturnRequestItemInspection inspection,
+                                                        ProductVariant variant, ReturnConditionStatus condition, ReturnDispositionType dispositionType,
+                                                        int quantity, int restockQuantity, String responsibility, String warehouseLocation,
+                                                        String note, String actor) {
+        ReturnInventoryDisposition disposition = new ReturnInventoryDisposition();
+        disposition.setReturnRequest(rr);
+        disposition.setReturnItemId(item != null ? item.getId() : null);
+        disposition.setInspectionId(inspection != null ? inspection.getId() : null);
+        disposition.setVariantId(variant != null ? variant.getId() : null);
+        disposition.setConditionStatus(condition == null ? ReturnConditionStatus.NOT_RESELLABLE : condition);
+        disposition.setDispositionType(dispositionType == null ? ReturnDispositionType.NOT_RESELLABLE_HOLD : dispositionType);
+        disposition.setQuantity(quantity);
+        disposition.setRestockQuantity(Math.max(0, restockQuantity));
+        disposition.setNonResellableQuantity(Math.max(0, quantity - restockQuantity));
+        disposition.setResponsibility(blankToNull(responsibility));
+        disposition.setWarehouseLocation(blankToNull(warehouseLocation));
+        disposition.setNote(blankToNull(note));
+        disposition.setCreatedBy(actor);
+        return disposition;
+    }
+
+    private ReturnDispositionType resolveDispositionType(ReturnConditionStatus condition, int restockQuantity, String responsibility, ReturnDispositionType requested) {
+        if (requested != null) {
+            if (restockQuantity > 0 && requested != ReturnDispositionType.RESTOCKED) {
+                throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Hàng đã nhập lại kho bán phải có hướng xử lý RESTOCKED.");
+            }
+            return requested;
+        }
+        if (restockQuantity > 0) {
+            return ReturnDispositionType.RESTOCKED;
+        }
+        String owner = responsibility == null ? "" : responsibility.trim().toUpperCase(Locale.ROOT);
+        if (owner.contains("CUSTOMER") || owner.contains("KHACH") || owner.contains("KHÁCH")) {
+            return ReturnDispositionType.DAMAGED_BY_CUSTOMER;
+        }
+        if (owner.contains("MANUFACTURER") || owner.contains("SUPPLIER") || owner.contains("NCC") || owner.contains("SHOP") || owner.contains("SẢN XUẤT") || owner.contains("SAN XUAT")) {
+            return ReturnDispositionType.MANUFACTURER_DEFECT;
+        }
+        if (condition == ReturnConditionStatus.DEFECTIVE) {
+            return ReturnDispositionType.MANUFACTURER_DEFECT;
+        }
+        return ReturnDispositionType.NOT_RESELLABLE_HOLD;
     }
 
     private void applyReturnedQuantities(ReturnRequest rr) {
@@ -501,6 +593,8 @@ public class ReturnRefundService {
                 inspection.setRefundRate(refundRate.setScale(2, RoundingMode.HALF_UP));
                 inspection.setRefundAmount(lineRefund);
                 inspection.setResponsibility(blankToNull(inspectionReq.getResponsibility()));
+                inspection.setDispositionType(resolveDispositionType(condition, restock, blankToNull(inspectionReq.getResponsibility()), inspectionReq.getDispositionType()));
+                inspection.setWarehouseLocation(blankToNull(inspectionReq.getWarehouseLocation()));
                 inspection.setNote(blankToNull(inspectionReq.getNote()));
                 item.getInspections().add(inspection);
 
@@ -539,6 +633,21 @@ public class ReturnRefundService {
         item.setRestockQuantity(restock);
         item.setConditionStatus(condition);
         item.setRefundAmount(nz(item.getUnitPrice()).multiply(BigDecimal.valueOf(received)));
+        if (received > 0) {
+            ReturnRequestItemInspection inspection = new ReturnRequestItemInspection();
+            inspection.setReturnItem(item);
+            inspection.setConditionStatus(condition);
+            inspection.setQuantity(received);
+            inspection.setRestockQuantity(restock);
+            inspection.setRefundQuantity(received);
+            inspection.setRefundRate(BigDecimal.valueOf(100).setScale(2, RoundingMode.HALF_UP));
+            inspection.setRefundAmount(item.getRefundAmount());
+            inspection.setResponsibility(null);
+            inspection.setDispositionType(resolveDispositionType(condition, restock, null, null));
+            inspection.setWarehouseLocation(null);
+            inspection.setNote(blankToNull(itemReq.getNote()));
+            item.getInspections().add(inspection);
+        }
         item.setNote(blankToNull(itemReq.getNote()));
     }
 
@@ -644,12 +753,16 @@ public class ReturnRefundService {
         dto.setReceivedAt(rr.getReceivedAt());
         dto.setRefundedAt(rr.getRefundedAt());
         dto.setCompletedAt(rr.getCompletedAt());
-        dto.setItems(rr.getItems() == null ? Collections.emptyList() : rr.getItems().stream().map(this::toItemResponse).collect(Collectors.toList()));
+        Map<Long, List<ReturnInventoryDisposition>> dispositionsByItem = rr.getId() == null
+                ? Collections.emptyMap()
+                : returnInventoryDispositionRepository.findAllByReturnRequest_IdOrderByIdAsc(rr.getId()).stream()
+                        .collect(Collectors.groupingBy(d -> d.getReturnItemId() == null ? -1L : d.getReturnItemId(), LinkedHashMap::new, Collectors.toList()));
+        dto.setItems(rr.getItems() == null ? Collections.emptyList() : rr.getItems().stream().map(item -> toItemResponse(item, dispositionsByItem)).collect(Collectors.toList()));
         dto.setHistories(rr.getHistories() == null ? Collections.emptyList() : rr.getHistories().stream().map(this::toHistoryResponse).collect(Collectors.toList()));
         return dto;
     }
 
-    private ReturnRefundItemResponse toItemResponse(ReturnRequestItem item) {
+    private ReturnRefundItemResponse toItemResponse(ReturnRequestItem item, Map<Long, List<ReturnInventoryDisposition>> dispositionsByItem) {
         OrderItem oi = item.getOrderItem();
         ReturnRefundItemResponse dto = new ReturnRefundItemResponse();
         dto.setId(item.getId());
@@ -669,6 +782,7 @@ public class ReturnRefundService {
         dto.setConditionStatus(item.getConditionStatus());
         dto.setNote(item.getNote());
         dto.setInspections(item.getInspections() == null ? Collections.emptyList() : item.getInspections().stream().map(this::toInspectionResponse).collect(Collectors.toList()));
+        dto.setDispositions(dispositionsByItem == null ? Collections.emptyList() : dispositionsByItem.getOrDefault(item.getId(), Collections.emptyList()).stream().map(this::toDispositionResponse).collect(Collectors.toList()));
         return dto;
     }
 
@@ -682,7 +796,28 @@ public class ReturnRefundService {
         dto.setRefundRate(inspection.getRefundRate());
         dto.setRefundAmount(inspection.getRefundAmount());
         dto.setResponsibility(inspection.getResponsibility());
+        dto.setDispositionType(inspection.getDispositionType());
+        dto.setWarehouseLocation(inspection.getWarehouseLocation());
         dto.setNote(inspection.getNote());
+        return dto;
+    }
+
+    private ReturnInventoryDispositionResponse toDispositionResponse(ReturnInventoryDisposition disposition) {
+        ReturnInventoryDispositionResponse dto = new ReturnInventoryDispositionResponse();
+        dto.setId(disposition.getId());
+        dto.setReturnItemId(disposition.getReturnItemId());
+        dto.setInspectionId(disposition.getInspectionId());
+        dto.setVariantId(disposition.getVariantId());
+        dto.setConditionStatus(disposition.getConditionStatus());
+        dto.setDispositionType(disposition.getDispositionType());
+        dto.setQuantity(disposition.getQuantity());
+        dto.setRestockQuantity(disposition.getRestockQuantity());
+        dto.setNonResellableQuantity(disposition.getNonResellableQuantity());
+        dto.setResponsibility(disposition.getResponsibility());
+        dto.setWarehouseLocation(disposition.getWarehouseLocation());
+        dto.setNote(disposition.getNote());
+        dto.setCreatedBy(disposition.getCreatedBy());
+        dto.setCreatedAt(disposition.getCreatedAt());
         return dto;
     }
 

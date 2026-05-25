@@ -89,7 +89,10 @@ public class ProductVariantService {
         // 🔥 ĐÃ FIX: Bổ sung cập nhật đầy đủ các trường từ ma trận giao diện Vue.js
         if (request.getPrice() != null) v.setPrice(request.getPrice());
         if (request.getSalePrice() != null) v.setSalePrice(request.getSalePrice());
-        if (request.getStock() != 0) v.setStock(request.getStock());
+        if (request.getStock() != 0) {
+            validateStockNotBelowReserved(v, request.getStock());
+            v.setStock(request.getStock());
+        }
 
         // Kiểm tra logic nếu SKU bị thay đổi
         if (request.getSku() != null && !request.getSku().trim().isEmpty() && !request.getSku().equalsIgnoreCase(v.getSku())) {
@@ -116,8 +119,19 @@ public class ProductVariantService {
             throw new IllegalArgumentException("Biến thể không thuộc về sản phẩm này: " + productId);
         }
 
+        if (Math.max(v.getReserved_quantity(), 0) > 0) {
+            throw new ValidationException("stock", "Không thể xóa biến thể đang có số lượng giữ chỗ: " + Math.max(v.getReserved_quantity(), 0) + ". Vui lòng xử lý/hủy đơn liên quan trước.");
+        }
+
         // Nhờ @SQLDelete bên Entity, lệnh delete này sẽ tự động chạy ngầm UPDATE is_deleted=true
         variantRepository.delete(v);
+    }
+
+    private void validateStockNotBelowReserved(ProductVariant variant, int newStock) {
+        int reserved = Math.max(variant.getReserved_quantity(), 0);
+        if (newStock < reserved) {
+            throw new ValidationException("stock", "Tồn kho mới không được nhỏ hơn số lượng đang giữ chỗ: " + reserved + ".");
+        }
     }
 
     private void normalizeAndValidateVariantRequest(VariantRequest request, Long currentId) {

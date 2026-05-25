@@ -160,7 +160,7 @@ public class VoucherService {
     public VoucherResponse getVoucherById(Long id) {
         Voucher voucher = voucherRepository.findById(id)
                 .orElseThrow(() -> new RuntimeException("Không tìm thấy Voucher với ID: " + id));
-        return mapToResponse(voucher); // Giả sử bạn đã có hàm mapToResponse hoặc tự tạo DTO mới
+        return mapToResponse(voucher);
     }
 
     @Transactional
@@ -198,7 +198,6 @@ public class VoucherService {
                             .id(c.getId())
                             .ten(c.getTen())
                             .email(c.getEmail())
-                            // 🔥 SỬA TẠI ĐÂY: Vì c.getLoaiKhach() đã là String nên lấy luôn
                             .loaiKhach(c.getLoaiKhach() != null ? c.getLoaiKhach() : "NORMAL")
                             .ngaySinh(c.getNgaySinh())
                             .build();
@@ -219,9 +218,93 @@ public class VoucherService {
         voucher.setStatus(status);
         voucherRepository.save(voucher);
     }
+
+
+    // 🔥 ĐÃ FIX LỖI: Dùng Điểm tích lũy để tính toán thay vì gọi thuộc tính không tồn tại
+    // 🔥 ĐÃ CẬP NHẬT: Thêm logic "Món quà trở lại" (Tạo TK > 30 ngày nhưng chưa mua hàng)
     public List<Voucher> getAvailableVouchers(Long customerId) {
-        // Gửi thẳng customerId xuống (có thể là số hoặc null). Logic SQL sẽ tự phân loại Khách lẻ hay Khách có TK
-        return voucherRepository.findAvailableVouchersForOrder(LocalDateTime.now(), customerId);
+        // 1. Lấy danh sách voucher thô từ DB
+        List<Voucher> rawVouchers = voucherRepository.findAvailableVouchersForOrder(LocalDateTime.now(), customerId);
+
+        // 2. Trích xuất cho Khách vãng lai (không đăng nhập)
+        if (customerId == null) {
+            return rawVouchers.stream()
+                    .filter(v -> v.getMinCustomerSpent() == null || v.getMinCustomerSpent() <= 0)
+                    .filter(v -> v.getIsFirstOrderOnly() == null || !v.getIsFirstOrderOnly())
+                    .filter(v -> v.getApplyBirthdayMonth() == null || !v.getApplyBirthdayMonth())
+                    .filter(v -> v.getLimitCustomerDays() == null || v.getLimitCustomerDays() <= 0)
+                    .filter(v -> v.getMaxDaysSinceLastOrder() == null || v.getMaxDaysSinceLastOrder() <= 0)
+                    .toList();
+        }
+
+        // 3. Khách hàng có tài khoản
+        Customer customer = customerRepository.findById(customerId).orElse(null);
+        if (customer == null) return rawVouchers;
+
+        // 4. Lọc chặn qua luồng Stream
+        return rawVouchers.stream().filter(v -> {
+
+            // 👉 Lọc Voucher VIP (Check tổng chi tiêu)
+            if (v.getMinCustomerSpent() != null && v.getMinCustomerSpent() > 0) {
+                long currentPoints = customer.getDiemTichLuy() != null ? customer.getDiemTichLuy() : 0L;
+                long estimatedSpent = currentPoints * 10000L;
+                if (estimatedSpent < v.getMinCustomerSpent()) {
+                    return false;
+                }
+            }
+
+            // 👉 Lọc Voucher Sinh nhật
+            if (Boolean.TRUE.equals(v.getApplyBirthdayMonth())) {
+                if (customer.getNgaySinh() == null ||
+                        customer.getNgaySinh().getMonthValue() != LocalDateTime.now().getMonthValue()) {
+                    return false;
+                }
+            }
+
+            // 👉 Lọc Voucher Đơn đầu tiên
+            if (Boolean.TRUE.equals(v.getIsFirstOrderOnly())) {
+                long currentPoints = customer.getDiemTichLuy() != null ? customer.getDiemTichLuy() : 0L;
+                if (currentPoints > 0) {
+                    return false;
+                }
+            }
+
+            // 👉 Lọc Voucher Khách hàng mới lập tài khoản (< 7 ngày)
+            if (v.getLimitCustomerDays() != null && v.getLimitCustomerDays() > 0) {
+                if (customer.getCreatedAt() != null) {
+                    long daysSinceCreated = java.time.temporal.ChronoUnit.DAYS.between(customer.getCreatedAt(), LocalDateTime.now());
+                    if (daysSinceCreated > v.getLimitCustomerDays()) {
+                        return false;
+                    }
+                } else {
+                    return false;
+                }
+            }
+
+            // 👉 Lọc Voucher Món quà trở lại (Đúng ý bạn: > 30 ngày tạo TK nhưng chưa mua)
+            if (v.getMaxDaysSinceLastOrder() != null && v.getMaxDaysSinceLastOrder() > 0) {
+                long currentPoints = customer.getDiemTichLuy() != null ? customer.getDiemTichLuy() : 0L;
+
+                // Điều kiện 1: Khách ĐÃ MUA hàng (có điểm) -> KHÔNG cho hiện
+                if (currentPoints > 0) {
+                    return false;
+                }
+
+                // Điều kiện 2: Khách CHƯA MUA -> Check xem tài khoản tạo quá 30 ngày chưa
+                if (customer.getCreatedAt() != null) {
+                    long daysSinceCreated = java.time.temporal.ChronoUnit.DAYS.between(customer.getCreatedAt(), LocalDateTime.now());
+
+                    // Nếu thời gian tạo TK đến nay <= 30 ngày (ví dụ mới tạo 20 ngày) -> KHÔNG cho hiện
+                    if (daysSinceCreated <= v.getMaxDaysSinceLastOrder()) {
+                        return false;
+                    }
+                } else {
+                    return false; // An toàn: Tránh lỗi nếu tài khoản bị mất dữ liệu ngày tạo
+                }
+            }
+
+            return true;
+        }).toList();
     }
 
     private void validateVoucher(VoucherRequest dto, Long currentId) {

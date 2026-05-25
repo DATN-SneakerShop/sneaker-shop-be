@@ -189,30 +189,41 @@ public class AdminOrderManagementService {
 
 
     private void applyManualPaymentFix(Order order, PaymentStatus nextPaymentStatus, String note) {
-        if (order.getChannel() != SalesChannel.ONLINE
-                || order.getPaymentMethod() != PaymentMethod.BANK_TRANSFER
+        if (order.getPaymentMethod() != PaymentMethod.BANK_TRANSFER
                 || order.getPaymentStatus() != PaymentStatus.FAILED) {
             throw new ResponseStatusException(
                     HttpStatus.BAD_REQUEST,
-                    "Chỉ đơn online thanh toán chuyển khoản bị lỗi mới được cập nhật trạng thái thanh toán tại đây."
+                    "Chỉ đơn thanh toán chuyển khoản bị lỗi mới được cập nhật trạng thái thanh toán tại đây."
             );
         }
         if (order.getOrderStatus() == OrderStatus.CANCELLED) {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Không thể cập nhật thanh toán cho đơn ở trạng thái hiện tại.");
         }
         if (order.getOrderStatus() == OrderStatus.COMPLETED) {
-            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Không thể cập nhật thanh toán cho đơn ở trạng thái hiện tại.");
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Đơn đã hoàn thành, không cần xử lý lại thanh toán.");
         }
 
         if (nextPaymentStatus != PaymentStatus.PAID && nextPaymentStatus != PaymentStatus.FAILED) {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Không thể cập nhật thanh toán cho đơn ở trạng thái hiện tại.");
         }
+
         order.setPaymentStatus(nextPaymentStatus);
         if (note != null && !note.isBlank()) {
             order.setNote(appendNote(order.getNote(), "Xử lý lỗi chuyển khoản: " + note.trim()));
         }
-        if (nextPaymentStatus == PaymentStatus.PAID && order.getOrderStatus() == OrderStatus.NEW) {
-            order.setOrderStatus(OrderStatus.PROCESSING);
+
+        if (nextPaymentStatus == PaymentStatus.PAID) {
+            if (order.getChannel() == SalesChannel.OFFLINE) {
+                orderInventoryService.commitReservedStock(order);
+                LocalDateTime now = LocalDateTime.now();
+                order.setOrderStatus(OrderStatus.COMPLETED);
+                order.setShippingStatus(ShippingStatus.DELIVERED);
+                if (order.getCompletedAt() == null) order.setCompletedAt(now);
+                if (order.getDeliveredAt() == null) order.setDeliveredAt(now);
+                awardLoyaltyPointsIfCompleted(order);
+            } else if (order.getOrderStatus() == OrderStatus.NEW) {
+                order.setOrderStatus(OrderStatus.PROCESSING);
+            }
         }
     }
 

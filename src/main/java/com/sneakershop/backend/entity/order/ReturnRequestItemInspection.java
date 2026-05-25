@@ -1,6 +1,7 @@
 package com.sneakershop.backend.entity.order;
 
 import com.sneakershop.backend.entity.order.enums.ReturnConditionStatus;
+import com.sneakershop.backend.entity.order.enums.ReturnDispositionType;
 import lombok.Data;
 import lombok.EqualsAndHashCode;
 import lombok.ToString;
@@ -45,6 +46,13 @@ public class ReturnRequestItemInspection {
 
     @Column(name = "responsibility", length = 40)
     private String responsibility;
+
+    @Enumerated(EnumType.STRING)
+    @Column(name = "disposition_type", length = 40)
+    private ReturnDispositionType dispositionType;
+
+    @Column(name = "warehouse_location", length = 120)
+    private String warehouseLocation;
 
     @Column(name = "note", columnDefinition = "TEXT")
     private String note;

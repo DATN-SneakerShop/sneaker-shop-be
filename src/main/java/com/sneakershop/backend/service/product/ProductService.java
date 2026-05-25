@@ -239,6 +239,7 @@ public class ProductService {
                 variant.setSize(resolvedSize);
                 variant.setColor(resolvedColor);
                 variant.setImageUrl(vReq.getImageUrl());
+                validateStockNotBelowReserved(variant, vReq.getStock());
                 variant.setStock(vReq.getStock());
                 variant.setStatus(vReq.getStock() > 0 ? "Còn hàng" : "Hết hàng");
                 variant.setPrice(vReq.getPrice() != null ? vReq.getPrice() : BigDecimal.ZERO);
@@ -268,11 +269,20 @@ public class ProductService {
         product.setStatus("Ngừng bán");
         if (product.getVariants() != null) {
             for (ProductVariant variant : product.getVariants()) {
+                validateStockNotBelowReserved(variant, 0);
                 variant.setStatus("Ngừng bán");
                 variant.setStock(0);
             }
         }
         productRepository.save(product);
+    }
+
+    private void validateStockNotBelowReserved(ProductVariant variant, int newStock) {
+        if (variant == null) return;
+        int reserved = Math.max(variant.getReserved_quantity(), 0);
+        if (newStock < reserved) {
+            throw new ValidationException("stock", "Tồn kho mới không được nhỏ hơn số lượng đang giữ chỗ: " + reserved + ". Vui lòng xử lý/hủy đơn liên quan trước.");
+        }
     }
 
     private ProductResponse toListResponse(Product p) {
@@ -542,6 +552,7 @@ public class ProductService {
             product.setStatus("Ngừng bán");
             if (product.getVariants() != null) {
                 for (ProductVariant variant : product.getVariants()) {
+                    validateStockNotBelowReserved(variant, 0);
                     variant.setStatus("Ngừng bán");
                     variant.setStock(0);
                 }

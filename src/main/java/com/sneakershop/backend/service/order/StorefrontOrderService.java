@@ -3,9 +3,7 @@ package com.sneakershop.backend.service.order;
 import com.sneakershop.backend.dto.order.*;
 import com.sneakershop.backend.entity.order.Order;
 import com.sneakershop.backend.entity.order.enums.*;
-import com.sneakershop.backend.entity.product.ProductVariant;
 import com.sneakershop.backend.repository.order.OrderRepository;
-import com.sneakershop.backend.repository.product.ProductVariantRepository;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -18,8 +16,8 @@ import java.util.stream.Collectors;
 @RequiredArgsConstructor
 public class StorefrontOrderService {
     private final OrderRepository orderRepository;
-    private final ProductVariantRepository productVariantRepository;
     private final PaymentService paymentService;
+    private final OrderInventoryService orderInventoryService;
 
     @Transactional
     public void cancelOrder(Long orderId, CancelOrderRequest request) {
@@ -32,20 +30,8 @@ public class StorefrontOrderService {
         order.setOrderStatus(OrderStatus.CANCELLED);
         order.setCancelledAt(LocalDateTime.now());
         order.setCancelReason(request.getReason());
-        if (order.getItems() != null) {
-            order.getItems().forEach(item -> {
-                if (item.getVariant() != null && item.getQuantity() != null && item.getQuantity() > 0) {
-                    ProductVariant variant = item.getVariant();
-                    int currentReserved = Math.max(variant.getReserved_quantity(), 0);
-
-                    variant.setReserved_quantity(
-                            Math.max(currentReserved - item.getQuantity(), 0)
-                    );
-                    productVariantRepository.save(variant);
-                    productVariantRepository.save(item.getVariant());
-                }
-            });
-        }
+        // Luôn nhả tồn kho qua OrderInventoryService để có lock và ghi lịch sử kho.
+        orderInventoryService.releaseForCancellation(order);
         if (PaymentStatus.PAID.equals(order.getPaymentStatus())) {
             paymentService.refund(order, order.getTotalAmount(), "Refund due to order cancellation", "MANUAL");
         } else if (PaymentMethod.COD.equals(order.getPaymentMethod())) {
@@ -59,23 +45,12 @@ public class StorefrontOrderService {
     @Transactional
     public void markDelivered(Long orderId) {
         Order order = orderRepository.findByIdAndDeletedFalse(orderId).orElseThrow(() -> new RuntimeException("Không tìm thấy order"));
-        order.setShippingStatus(ShippingStatus.DELIVERED);
-        order.setDeliveredAt(LocalDateTime.now());
-        order.setOrderStatus(OrderStatus.COMPLETED);
-        order.setCompletedAt(LocalDateTime.now());
-        if (PaymentMethod.COD.equals(order.getPaymentMethod()) && !PaymentStatus.PAID.equals(order.getPaymentStatus())) {
-            order.setPaymentStatus(PaymentStatus.PAID);
-        }
-        orderRepository.save(order);
+        throw new RuntimeException("Khách hàng không được tự đánh dấu đơn đã giao thành công. Vui lòng xử lý giao hàng tại màn hình quản trị.");
     }
 
     @Transactional
     public void refundOrder(Long orderId, RefundRequest request) {
-        Order order = orderRepository.findByIdAndDeletedFalse(orderId).orElseThrow(() -> new RuntimeException("Không tìm thấy order"));
-        if (!PaymentStatus.PAID.equals(order.getPaymentStatus()) && !PaymentStatus.PARTIALLY_REFUNDED.equals(order.getPaymentStatus())) {
-            throw new RuntimeException("Chỉ hoàn tiền cho đơn đã thanh toán");
-        }
-        paymentService.refund(order, request.getAmount(), request.getReason(), request.getProvider());
+        throw new RuntimeException("Khách hàng không được tự hoàn tiền đơn hàng. Vui lòng tạo yêu cầu trả hàng/hoàn tiền hoặc liên hệ admin.");
     }
 
     @Transactional(readOnly = true)

@@ -11,6 +11,7 @@ import com.sneakershop.backend.entity.order.enums.PaymentStatus;
 import com.sneakershop.backend.entity.order.enums.TransactionStatus;
 import com.sneakershop.backend.entity.order.enums.TransactionType;
 import com.sneakershop.backend.entity.order.enums.SalesChannel;
+import com.sneakershop.backend.entity.order.enums.ShippingStatus;
 import com.sneakershop.backend.repository.order.OrderRepository;
 import com.sneakershop.backend.repository.order.PaymentTransactionRepository;
 import com.sneakershop.backend.service.notification.TelegramNotificationService;
@@ -35,6 +36,7 @@ public class SepayWebhookService {
     private final TelegramNotificationService telegramNotificationService;
     private final ObjectMapper objectMapper;
     private final CustomerService customerService;
+    private final OrderInventoryService orderInventoryService;
 
     @Transactional(readOnly = true)
     public CheckoutResponse getPaymentInfo(String orderCode, String lookupCode) {
@@ -171,6 +173,17 @@ public class SepayWebhookService {
             tx.setRawPayload(toJson(request));
             paymentTransactionRepository.save(tx);
 
+            // Nếu webhook bị gửi lại sau khi đơn tại quầy đã PAID/COMPLETED, commitReservedStock là idempotent
+            // khi reserved_quantity đã về 0. Đoạn này cũng giúp sửa các đơn cũ bị PAID nhưng còn treo reserved.
+            if (SalesChannel.OFFLINE.equals(order.getChannel())) {
+                orderInventoryService.commitReservedStock(order);
+                order.setShippingStatus(ShippingStatus.DELIVERED);
+                LocalDateTime now = LocalDateTime.now();
+                if (order.getCompletedAt() == null) order.setCompletedAt(now);
+                if (order.getDeliveredAt() == null) order.setDeliveredAt(now);
+                orderRepository.save(order);
+            }
+
             telegramNotificationService.sendMessage(
                     "⚠️ <b>Webhook SePay trùng logic</b>\n"
                             + "Lý do: Đơn hàng đã ở trạng thái thanh toán thành công\n"
@@ -224,9 +237,18 @@ public class SepayWebhookService {
 
         order.setPaymentStatus(PaymentStatus.PAID);
         if (SalesChannel.OFFLINE.equals(order.getChannel())) {
+            // Đơn tại quầy chuyển khoản được hoàn tất ngay sau khi SePay xác nhận đủ tiền.
+            // Vì lúc tạo đơn hệ thống chỉ giữ chỗ tồn kho, bắt buộc phải commit reserved stock ở đây
+            // để tránh trạng thái COMPLETED nhưng stock chưa giảm và reserved_quantity bị treo.
+            orderInventoryService.commitReservedStock(order);
             order.setOrderStatus(OrderStatus.COMPLETED);
+            order.setShippingStatus(ShippingStatus.DELIVERED);
+            LocalDateTime receivedAt = resolveReceivedAt(request);
             if (order.getCompletedAt() == null) {
-                order.setCompletedAt(resolveReceivedAt(request));
+                order.setCompletedAt(receivedAt);
+            }
+            if (order.getDeliveredAt() == null) {
+                order.setDeliveredAt(receivedAt);
             }
         } else if (OrderStatus.NEW.equals(order.getOrderStatus())) {
             order.setOrderStatus(OrderStatus.PROCESSING);

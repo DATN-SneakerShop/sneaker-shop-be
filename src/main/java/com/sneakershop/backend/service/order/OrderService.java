@@ -385,10 +385,37 @@ public class OrderService {
 
     private void recalcOrderTotals(Order order) {
         BigDecimal subtotal = nz(order.getSubtotalAmount());
-        BigDecimal discount = nz(order.getDiscountAmount());
         BigDecimal ship = nz(order.getShippingFee());
 
-        BigDecimal total = subtotal.subtract(discount).add(ship);
+        /*
+         * Lưu ý nghiệp vụ:
+         * - discount_amount trong đơn checkout online đang là số tiền giảm dùng để HIỂN THỊ/BÁO CÁO,
+         *   có thể bao gồm cả promotion_discount_amount.
+         * - Với promotion theo sản phẩm, line_total/subtotal đã là giá sau promotion, nên nếu tiếp tục
+         *   lấy discount_amount để trừ một lần nữa thì đơn COD khi bấm "Xác nhận đơn" sẽ bị final_amount = 0.
+         * - Vì vậy khi đơn có các cột giảm giá chi tiết, chỉ trừ các khoản làm giảm trực tiếp số tiền khách phải trả
+         *   ở cấp đơn: voucher, VIP/manual, hỗ trợ phí ship. Không trừ lại promotion đã nằm trong line item.
+         * - Với đơn cũ/admin legacy chưa tách cột chi tiết, fallback về discount_amount như trước.
+         */
+        BigDecimal promotionDiscount = nz(order.getPromotionDiscountAmount());
+        BigDecimal voucherDiscount = nz(order.getVoucherDiscountAmount());
+        BigDecimal shippingDiscount = nz(order.getShippingDiscountAmount());
+        BigDecimal manualDiscount = nz(order.getManualDiscountAmount());
+
+        BigDecimal detailedOrderLevelDiscount = voucherDiscount
+                .add(shippingDiscount)
+                .add(manualDiscount);
+
+        boolean hasDetailedDiscountColumns = promotionDiscount.signum() > 0
+                || voucherDiscount.signum() > 0
+                || shippingDiscount.signum() > 0
+                || manualDiscount.signum() > 0;
+
+        BigDecimal discountToSubtract = hasDetailedDiscountColumns
+                ? detailedOrderLevelDiscount
+                : nz(order.getDiscountAmount());
+
+        BigDecimal total = subtotal.subtract(discountToSubtract).add(ship);
         if (total.signum() < 0) total = BigDecimal.ZERO;
 
         order.setTotalAmount(total);
@@ -737,6 +764,15 @@ public class OrderService {
     @AuditAction(module = "ORDER", action = "DELETE", entity = "Order", description = "Đã xóa (soft delete) đơn hàng ID: #{#id}")
     public void delete(Long id) {
         Order order = getOrderOr404(id);
+        if (!OrderStatus.CANCELLED.equals(order.getOrderStatus())
+                && !OrderStatus.COMPLETED.equals(order.getOrderStatus())
+                && !OrderStatus.RETURNED.equals(order.getOrderStatus())
+                && !OrderStatus.PARTIALLY_RETURNED.equals(order.getOrderStatus())) {
+            throw new ResponseStatusException(
+                    HttpStatus.BAD_REQUEST,
+                    "Không thể xóa đơn đang hoạt động. Vui lòng hủy đơn trước để hệ thống nhả tồn kho giữ chỗ."
+            );
+        }
         order.setDeleted(true);
         order.setDeletedAt(LocalDateTime.now());
         orderRepo.save(order);

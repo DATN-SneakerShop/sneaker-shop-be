@@ -25,6 +25,7 @@ public class PaymentService {
     private final OrderRepository orderRepository;
     private final ProductVariantRepository productVariantRepository;
     private final List<PaymentGatewayClient> paymentGatewayClients;
+    private final OrderInventoryService orderInventoryService;
 
     public PaymentInitResponse initPayment(Order order) {
         PaymentTransaction tx = paymentTransactionRepository.findTopByOrder_IdAndTransactionTypeOrderByCreatedAtDesc(order.getId(), TransactionType.PAYMENT)
@@ -66,8 +67,9 @@ public class PaymentService {
             order.setOrderStatus(OrderStatus.CANCELLED);
             order.setCancelledAt(LocalDateTime.now());
             order.setCancelReason("Thanh toán online thất bại");
+            // Thanh toán thất bại: hủy đơn và nhả tồn kho đã giữ chỗ qua service chuẩn để có lock + lịch sử kho.
+            orderInventoryService.releaseForCancellation(order);
             orderRepository.save(order);
-            restoreStock(order);
         }
     }
 

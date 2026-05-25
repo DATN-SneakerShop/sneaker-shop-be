@@ -53,7 +53,8 @@ public interface CustomerRepository extends JpaRepository<Customer, Long> {
             "c.id, c.ten, c.email, c.ngaySinh, c.loaiKhach, " +
             "COUNT(o.id), " +
             "COALESCE(SUM(o.totalAmount), 0), " +
-            "c.createdAt) " +
+            "c.createdAt, " +
+            "MAX(o.createdAt)) " +
             "FROM Customer c LEFT JOIN Order o ON o.customer.id = c.id " +
             "GROUP BY c.id, c.ten, c.email, c.ngaySinh, c.loaiKhach, c.createdAt")
     List<CustomerVoucherDTO> findAllForVoucher();

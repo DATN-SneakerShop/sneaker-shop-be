@@ -1,6 +1,7 @@
 package com.sneakershop.backend.dto.order.returning;
 
 import com.sneakershop.backend.entity.order.enums.ReturnConditionStatus;
+import com.sneakershop.backend.entity.order.enums.ReturnDispositionType;
 import lombok.Data;
 
 import javax.validation.constraints.DecimalMax;
@@ -32,5 +33,7 @@ public class AdminReceiveReturnInspectionRequest {
     private BigDecimal refundRate;
 
     private String responsibility;
+    private ReturnDispositionType dispositionType;
+    private String warehouseLocation;
     private String note;
 }

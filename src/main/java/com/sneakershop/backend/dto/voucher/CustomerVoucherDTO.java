@@ -17,10 +17,11 @@ public class CustomerVoucherDTO {
     private Long totalOrders;
     private BigDecimal totalSpent;
     private LocalDateTime createdAt; // Đổi thành LocalDateTime để khớp Entity Order
+    private LocalDateTime lastOrderAt;
 
     public CustomerVoucherDTO(Long id, String ten, String email, LocalDate ngaySinh,
                               String loaiKhach, Long totalOrders, Object totalSpent,
-                              LocalDateTime createdAt) { // Tham số cuối là LocalDateTime
+                              LocalDateTime createdAt, LocalDateTime lastOrderAt) { // Tham số cuối là LocalDateTime
         this.id = id;
         this.ten = ten;
         this.email = email;
@@ -28,6 +29,7 @@ public class CustomerVoucherDTO {
         this.loaiKhach = loaiKhach;
         this.totalOrders = (totalOrders != null) ? totalOrders : 0L;
         this.createdAt = createdAt;
+        this.lastOrderAt = lastOrderAt;
 
         // Xử lý totalSpent an toàn từ kết quả SUM của Hibernate
         if (totalSpent instanceof BigDecimal) {
