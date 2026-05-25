@@ -5,6 +5,7 @@ import java.text.Normalizer;
 import java.util.Locale;
 
 public final class ValidationSupport {
+    public static final int MAX_QUANTITY_PER_ITEM = 10;
     public static final int MAX_TOTAL_ITEMS_PER_ORDER = 50;
 
     private ValidationSupport() {}
@@ -28,6 +29,9 @@ public final class ValidationSupport {
 
     public static void validatePerItemQuantity(Integer quantity) {
         requirePositiveQuantity(quantity);
+        if (quantity > MAX_QUANTITY_PER_ITEM) {
+            throw new ValidationException("quantity", "Mỗi sản phẩm chỉ được mua tối đa 10 đôi trong một đơn hàng.");
+        }
     }
 
     public static void validateTotalQuantity(int total) {

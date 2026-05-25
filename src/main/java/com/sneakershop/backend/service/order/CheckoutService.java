@@ -631,6 +631,9 @@ public class CheckoutService {
             if (variantId != null) {
                 int newTotal = totalByVariant.getOrDefault(variantId, 0) + quantity;
                 totalByVariant.put(variantId, newTotal);
+                if (newTotal > ValidationSupport.MAX_QUANTITY_PER_ITEM) {
+                    throw new RuntimeException("Mỗi sản phẩm chỉ được mua tối đa 10 đôi trong một đơn hàng.");
+                }
             }
         }
         ValidationSupport.validateTotalQuantity(totalItems);
@@ -647,6 +650,9 @@ public class CheckoutService {
     private void validateStock(ProductVariant variant, Integer quantity) {
         if (quantity == null || quantity <= 0) {
             throw new RuntimeException("Số lượng sản phẩm phải là số nguyên dương.");
+        }
+        if (quantity > ValidationSupport.MAX_QUANTITY_PER_ITEM) {
+            throw new RuntimeException("Mỗi sản phẩm chỉ được mua tối đa 10 đôi trong một đơn hàng.");
         }
 
         int available = getAvailableQuantity(variant);

@@ -254,6 +254,9 @@ public class CartService {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Số lượng sản phẩm phải là số nguyên dương.");
         }
 
+        if (quantity > ValidationSupport.MAX_QUANTITY_PER_ITEM) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Mỗi sản phẩm chỉ được mua tối đa 10 đôi trong một đơn hàng.");
+        }
         int availableStock = getAvailableStock(variant);
 
         if (availableStock < quantity) {
